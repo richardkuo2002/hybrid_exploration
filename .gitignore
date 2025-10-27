@@ -6,6 +6,7 @@ map_train/
 
 # 忽略 Python 虛擬環境（如果有的話）
 venv/
+venv_i/
 *.pyc
 __pycache__/
 
