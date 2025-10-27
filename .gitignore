@@ -1,0 +1,15 @@
+# .gitignore 內容
+
+# 忽略地圖資料
+DungeonMaps/
+map_train/
+
+# 忽略 Python 虛擬環境（如果有的話）
+venv/
+*.pyc
+__pycache__/
+
+# 忽略 driver.py 產生的結果（可選）
+*.csv
+*.png
+*.mp4
