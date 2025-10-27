@@ -97,7 +97,7 @@ python worker.py --plot --no_save_video
 python worker.py --no_save_video
 ```
 
-模擬結束後，影片會以 [時間]_map[地圖ID]_robots[數量].mp4 的格式儲存。
+模擬結束後，影片會以 `[時間]_map[地圖ID]_robots[數量].mp4` 的格式儲存。
 
 ### 執行批次實驗
 
