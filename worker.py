@@ -2,13 +2,15 @@ import numpy as np
 import copy
 import sys
 import random
+import datetime 
+import argparse 
 
 from parameter import *
 from robot import Robot
 from env import Env
 
 class Worker:
-    def __init__(self, global_step=0, agent_num=3, map_index=0, plot=False):
+    def __init__(self, global_step=0, agent_num=3, map_index=0, plot=False, save_video=True):
         
         self.global_step = global_step
         self.agent_num = agent_num
@@ -16,9 +18,8 @@ class Worker:
         self.env = Env(self.agent_num, map_index=map_index, k_size=self.k_size, plot=plot)
         self.step_count = 0
         self.plot = plot
+        self.save_video = save_video
         
-        # 初始化機器人位置 (可以保留，也可以移到 Env 的 __init__)
-        # 暫時保留，因為 Env 已經初始化了，這裡只是微調
         for i, robot in enumerate(self.env.robot_list):
             if robot.node_coords is not None and len(robot.node_coords) > 0:
                 iter = min(copy.deepcopy(i), len(robot.node_coords)-1 )
@@ -69,8 +70,10 @@ class Worker:
             
             # === 階段三：繪圖與日誌 ===
             if self.plot:
+                # 呼叫 plot_env (現在它也會儲存影格)
                 self.env.plot_env(step)
             else:
+                # 呼叫 plot_env_without_window (只儲存影格)
                 self.env.plot_env_without_window(step)
             
             msg = f"\rEP: {curr_episode} | Step {step:5d} | Coverage: {coverage * 100:6.2f}% "
@@ -80,21 +83,51 @@ class Worker:
             
             if done:
                 print(f"\n Episode {curr_episode} completed at step {step} with coverage {coverage*100:.2f}%")
-                if not self.plot:
-                    self.env.save_video(f"episode_{curr_episode}.mp4")
+                
+                if self.save_video:
+                    time_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                    map_idx = self.env.map_index
+                    robot_count = self.agent_num
+                    filename = f"{time_str}_map{map_idx}_robots{robot_count}.mp4"
+                    self.env.save_video(filename)
+                
                 return True, step
             
             self.step_count = step
             
         print(f"\n Episode {curr_episode} timeout at step {step} with coverage {coverage*100:.2f}%")
-        if not self.plot:
-            self.env.save_video(f"episode_{curr_episode}.mp4")
+        
+        if self.save_video:
+            time_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            map_idx = self.env.map_index
+            robot_count = self.agent_num
+            filename = f"{time_str}_map{map_idx}_robots{robot_count}.mp4"
+            self.env.save_video(filename)
+        
         return False, step
-
-    # <--- 修改點：移除了 select_node 函式 --- >
 
 
 if __name__ == '__main__':
-    worker = Worker(global_step=0, agent_num=3, map_index=2, plot=False) # 預設 plot=False 以便儲存影片
+    
+    # --- 修改點：移除 parser.add_argument 之間的空行 ---
+    parser = argparse.ArgumentParser(description="Run a single episode of the hybrid exploration simulation.")
+    parser.add_argument('--TEST_MAP_INDEX', type=int, default=2, help='Index of the map to use for the test (default: 2)')
+    parser.add_argument('--TEST_AGENT_NUM', type=int, default=3, help='Number of agents to use for the test (default: 3)')
+    parser.add_argument('--plot', action='store_true', help='Enable real-time plotting (will also save video if --no_save_video is not used)')
+    parser.add_argument('--save_video', action=argparse.BooleanOptionalAction, default=True, help='Save the video at the end (default: True). Use --no_save_video to disable.')
+    # --- ---
+
+    args = parser.parse_args()
+
+    print(f"Starting worker with Map Index: {args.TEST_MAP_INDEX}, Agent Num: {args.TEST_AGENT_NUM}, Plot: {args.plot}, Save Video: {args.save_video}")
+    
+    worker = Worker(
+        global_step=0, 
+        agent_num=args.TEST_AGENT_NUM, 
+        map_index=args.TEST_MAP_INDEX, 
+        plot=args.plot,
+        save_video=args.save_video
+    )
+    
     success, steps = worker.run_episode(curr_episode=0)
     print(f'Episode finished: {success} in {steps} steps.')

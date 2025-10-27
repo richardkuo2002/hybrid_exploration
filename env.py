@@ -5,9 +5,6 @@ import numpy as np
 import matplotlib.pylab as plt
 import matplotlib.patches as patches
 
-# 移除了 linear_sum_assignment，因為它被移到 server.py
-# from scipy.optimize import linear_sum_assignment 
-
 from robot import Robot
 from server import Server
 from graph_generator import Graph_generator
@@ -66,12 +63,6 @@ class Env():
         # 讓 server 在第一次執行時自己更新
         self.server.update_and_assign_tasks(self.robot_list, self.real_map, self.find_frontier)
         
-        
-    # <--- 修改點：移除了 step 函式 --- >
-    
-    # <--- 修改點：移除了 server_step 函式 --- >
-
-    # <--- 修改點：移除了 _filter_occupied_targets 函式 --- >
         
     def calculate_coverage_ratio(self):
         """計算地圖探索覆蓋率 (基於 server 的全局地圖)"""
@@ -132,23 +123,14 @@ class Env():
 
         return f
     
-    # <--- 修改點：移除了 plan_local_path 函式 --- >
-    
-    # <--- 修改點：移除了 plan_global_path 函式 --- >
-    
     def import_map(self, map_path):
         """
         匯入地圖檔案，並解析障礙物、自由空間與機器人當前位置。
         (保持不變)
         """
-        # try:
         map = (io.imread(map_path, 1)).astype(int)
         if np.all(map == 0):
             map = (io.imread(map_path, 1) * 255).astype(int)
-        # except:
-        #     new_map_index = self.map_dir + '/' + self.map_list[0]
-        #     map = (io.imread(new_map_index, 1)).astype(int)
-        #     print('could not read the map_path ({}), hence skipping it and using ({}).'.format(map_index, new_map_index))
 
         robot_location = np.nonzero(map == 208)
         robot_location = np.array([np.array(robot_location)[1, 127], np.array(robot_location)[0, 127]])
@@ -156,13 +138,17 @@ class Env():
         map = map * 254 + 1
         return map, robot_location
     
-    # ... plot_env 和 plot_env_without_window ...
-    # (這兩個繪圖函式保持不變，它們需要 Env 中的所有物件)
     def plot_env(self, step):
-        """Real 縱橫跨2x2；Robot1 的 local map 從第3列第1欄開始、每列2張、每兩列換行"""
+        """
+        Real 縱橫跨2x2；Robot1 的 local map 從第3列第1欄開始、每列2張、每兩列換行
+        <--- 修改點：此函式現在也會儲存影格 --- >
+        """
         if not hasattr(self, 'fig') or self.fig is None:
             plt.ion()  # 啟用互動模式
             self.fig = plt.figure(figsize=(8, 10))
+            # <--- 修改點：初始化 frames_data 列表 --- >
+            if not hasattr(self, 'frames_data'):
+                self.frames_data = []
         else:
             plt.figure(self.fig.number)  # 切換到現有圖形
             plt.clf()  # 清除所有內容
@@ -176,6 +162,7 @@ class Env():
         total_rows = base_rows + rows_for_maps + gaps
         total_cols = 2
 
+        # ( ... 中間的繪圖邏輯 ... )
         # Real
         ax_real = plt.subplot2grid((total_rows, total_cols), (0, 0), rowspan=2, colspan=2)
         ax_real.plot(self.server.position[0], self.server.position[1], markersize=8, zorder=9999, marker="h", ls="-", c=color_list[-2], mec="black")
@@ -197,20 +184,8 @@ class Env():
         ax_env.imshow(self.server.global_map, cmap='gray', alpha=0.5)
         ax_env.set_title('Global Map')
         ax_env.axis('off')
-        
-        
-        
-        # frontiers = getattr(self, "global_map_frontiers", None)
-
-        # if frontiers is not None and len(frontiers) > 0:
-        #     xs = frontiers[:, 0]
-        #     ys = frontiers[:, 1]
-
-        #     # 用紅點疊加（s=2 可視需要調整大小，zorder 提升圖層）
-        #     ax_env.scatter(xs, ys, c='r', s=2, zorder=5)
 
         # Robot local maps：從第3列開始（row=2），每列最多2張，下一組往下跳一列間隔
-        
         row_start = 4
         for i, robot in enumerate(self.robot_list):
             robot_marker_color = color_list[i % len(color_list)]
@@ -246,27 +221,20 @@ class Env():
                 ax_real.plot(history[:,0], history[:,1], '-', linewidth=2, 
                         alpha=0.7, color=robot_marker_color, 
                         label=f'Robot{i+1} history')
-                
-                # 在軌跡上標記一些點顯示方向
-                # if len(history) > 5:
-                #     step_size = max(1, len(history) // 10)
-                #     for j in range(0, len(history), step_size):
-                #         ax.plot(history[j,0], history[j,1], '-', 
-                #                 markersize=3, color=robot_marker_color, alpha=0.5)
-            
+
             # 預計路徑
             if  len(robot.planned_path) >= 1:
-                # 先將目前位置加入路徑的起點
                 planned_path_with_current = [robot.position.copy()] + robot.planned_path
                 path = np.array(planned_path_with_current)
                 ax.plot(path[:,0], path[:,1], '-', linewidth=2, 
                         color="k")
                 ax.plot(robot.target_pos[0], robot.target_pos[1], markersize=6, zorder=9999, marker="x", ls="-", c='k', mec="black")
-            # # 畫機器人當前位置
-            # plt.scatter(robot.position[0], robot.position[1], 
-            #             c=f'C{i}', edgecolors='k', zorder=5)
-            
 
+        plt.tight_layout() # <--- 修改點：加入 tight_layout 確保儲存的影格佈局良好
+
+        # <--- 修改點：在繪製到視窗前，先儲存影格到記憶體 --- >
+        self._save_frame_to_memory()
+        
         plt.draw()  # 重畫圖形
         plt.pause(0.001)  # 短暫暫停，讓圖形更新
         
@@ -285,6 +253,7 @@ class Env():
             plt.figure(self.fig.number)
             plt.clf()
         
+        # ( ... 中間的繪圖邏輯 ... )
         color_list = ["r", "g", "c", "m", "y", "k"]
         n_maps = self.n_agent
         rows_for_maps = 0 if n_maps == 0 else ((n_maps - 1) // 2 + 1)
@@ -378,6 +347,9 @@ class Env():
         import io
         from PIL import Image
         
+        if not hasattr(self, 'frames_data'): # 安全檢查
+             self.frames_data = []
+             
         buf = io.BytesIO()
         plt.savefig(buf, format='png', dpi=100, bbox_inches='tight')
         buf.seek(0)
@@ -386,9 +358,12 @@ class Env():
         buf.close()
 
     def save_video(self, filename="exploration_video.mp4", fps=5):
-        """將所有幀保存為影片"""
+        """
+        將所有幀保存為影片
+        <--- 修改點：此函式現在會檢查是否有影格可存 --- >
+        """
         if not hasattr(self, 'frames_data') or not self.frames_data:
-            print("No frames to save")
+            print("\nNo frames captured, skipping video save.") # <--- 修改點：提示用戶
             return
         
         import cv2
@@ -409,7 +384,7 @@ class Env():
             video_writer.write(frame_bgr)
         
         video_writer.release()
-        print(f"Video saved as {filename}")
+        print(f"\nVideo saved as {filename}") # <--- 修改點：換行
         
         # 清理記憶體
         self.frames_data = []
