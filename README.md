@@ -49,16 +49,41 @@ hybrid_exploration/
 └── ...
 ```
 ### 3. 安裝依賴套件
-建議使用虛擬環境。本專案的依賴套件皆列於 (`requirements.txt`)。
+建議使用虛擬環境。本專案的依賴套件皆列於 `requirements.txt`。
 ```bash
 pip install -r requirements.txt
 ```
 ## 如何運行 (Usage)
 ### 執行單次模擬
-可以透過執行 (`worker.py`) 來進行單次模擬測試。此腳本會初始化一個 (`Worker`) 並運行一個 episode。
+可以透過執行 `worker.py` 來進行單次模擬測試。此腳本會初始化一個 `Worker` 並運行一個 episode。
 ```bash
 python worker.py
 ```
-模擬過程將會產生 (`episode_0.mp4`) 影片檔。
-執行批次實驗
-若要進行多次實驗並收集統計數據，請執行 driver.py。
+模擬過程將會產生 `episode_0.mp4` 影片檔。
+### 執行批次實驗
+若要進行多次實驗並收集統計數據，請執行 `driver.py`。
+```bash
+python driver.py
+```
+此腳本會運行 `N_RUNS` 次實驗，並將結果（完成步數、成功率、使用地圖等）儲存到 `results.csv` 中，同時繪製箱形圖（Boxplot）。
+
+##專案檔案結構
+- `driver.py`: 批次實驗的主執行檔。
+
+- `worker.py`: 定義 `Worker` 類別，負責單次模擬的完整流程（episode loop）。
+
+- `env.py`: 模擬環境核心。處理機器人移動、地圖更新、感測、以及機器人之間和伺服器之間的通訊與地圖合併。
+
+- `server.py`: 定義 `Server` 類別，儲存全域地圖與狀態。
+
+- `robot.py`: 定義 `Robot` 類別，儲存本地地圖與狀態。
+
+- `graph_generator.py`: 核心演算法之一，負責建立、更新和管理無碰撞圖結構。
+
+- `node.py`: 定義圖中的 `Node` 類別，並計算其探索效益（utility）。
+
+- `graph.py`: 圖論的基礎類別（`Graph`, `Edge`）與 A* 尋路演算法。
+
+- `sensor.py`: 模擬雷射雷達（Lidar）的感測器模型。
+
+- `parameter.py`: 儲存所有模擬用的超參數（如感測範圍、通訊範圍等）。
