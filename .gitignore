@@ -14,3 +14,6 @@ __pycache__/
 *.csv
 *.png
 *.mp4
+
+# 忽略 macOS 系統檔案
+.DS_Store
