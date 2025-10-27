@@ -64,13 +64,40 @@ pip install -r requirements.txt
 
 ### 執行單次模擬
 
-可以透過執行 `worker.py` 來進行單次模擬測試。此腳本會初始化一個 `Worker` 並運行一個 episode。
+`worker.py` 是單次模擬的執行入口。它提供了靈活的命令列參數來調整測試環境。
+
+基本執行 (使用預設參數): (預設: map=2, agents=3, 儲存影片, 不即時繪圖)
 
 ```bash
 python worker.py
 ```
 
-模擬過程將會產生 `episode_0.mp4` 影片檔。
+### 常用參數組合:
+
+* ### 指定地圖和機器人數量:
+
+```Bash
+python worker.py --TEST_MAP_INDEX 10 --TEST_AGENT_NUM 5
+```
+
+* ### 即時觀看模擬 (會彈出視窗, 同時也會儲存影片):
+
+```Bash
+python worker.py --plot
+```
+* ### 即時觀看, 但不儲存影片 (適合快速除錯):
+
+```Bash
+python worker.py --plot --no_save_video
+```
+
+* ### 在背景執行, 且不儲存影片 (適合純跑數據):
+
+```Bash
+python worker.py --no_save_video
+```
+
+模擬結束後，影片會以 [時間]_map[地圖ID]_robots[數量].mp4 的格式儲存。
 
 ### 執行批次實驗
 
