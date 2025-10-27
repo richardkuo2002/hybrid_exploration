@@ -94,7 +94,7 @@ class Env():
                 other.local_map[:] = merged
                 
                 robot.out_range_step = min(robot.out_range_step, other.out_range_step)
-                if (dist_to_server > SERVER_COMM_RANGE or robot.out_range_step > OUT_RANGE_STEP) and not robot.target_gived_by_server:
+                if (dist_to_server > SERVER_COMM_RANGE or robot.out_range_step > OUT_RANGE_STEP) and not robot.target_given_by_server:
                     robot.planned_path = []
 
         # 3. 與伺服器同步 local_map
@@ -108,10 +108,10 @@ class Env():
             robot.last_position_in_server_range = robot.position
             self.server.robot_in_range[agent_id] = True
             robot.out_range_step = 0
-            if not robot.target_gived_by_server:
+            if not robot.target_given_by_server:
                 robot.planned_path = []
         else:
-            if not robot.target_gived_by_server:
+            if not robot.target_given_by_server:
                 robot.out_range_step += 1
             self.server.robot_in_range[agent_id] = False
 
@@ -297,7 +297,7 @@ class Env():
             
             # 設定目標位置
             robot.target_pos = np.array(target)
-            robot.target_gived_by_server = True
+            robot.target_given_by_server = True
             
             # 規劃全域路徑
             try:
@@ -605,7 +605,7 @@ class Env():
             if len(robot.planned_path) >= 1:
                 planned_path_with_current = [robot.position.copy()] + robot.planned_path
                 path = np.array(planned_path_with_current)
-                if robot.target_gived_by_server:
+                if robot.target_given_by_server:
                     ax_env.plot(path[:,0], path[:,1], '-', linewidth=2, color="k")
                     ax_env.plot(robot.target_pos[0], robot.target_pos[1], markersize=6, 
                         zorder=9999, marker="x", ls="-", c='k', mec="black")
@@ -701,7 +701,7 @@ class Env():
             # if np.array_equal(robot.target_pos, robot.last_position_in_server_range):
             #     ax.set_title(f'Robot{i+1} Local Map')
             # else:
-            ax.set_title(f'Robot{i+1}, out {robot.out_range_step}, {int(robot.target_gived_by_server)}')
+            ax.set_title(f'Robot{i+1}, out {robot.out_range_step}, {int(robot.target_given_by_server)}')
             # ax.set_title(f'Robot{i+1}')
             ax.axis('off')
             
@@ -716,7 +716,7 @@ class Env():
             if len(robot.planned_path) >= 1:
                 planned_path_with_current = [robot.position.copy()] + robot.planned_path
                 path = np.array(planned_path_with_current)
-                if robot.target_gived_by_server:
+                if robot.target_given_by_server:
                     ax_env.plot(path[:,0], path[:,1], '-', linewidth=2, color="k")
                     ax_env.plot(robot.target_pos[0], robot.target_pos[1], markersize=6, 
                         zorder=9999, marker="x", ls="-", c='k', mec="black")

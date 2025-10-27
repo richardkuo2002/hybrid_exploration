@@ -44,14 +44,14 @@ class Worker:
                 # 1. 檢查機器人是否有剩餘路徑，若無則重新規劃
                 if len(robot.planned_path) < 1:
                     # 選擇目標節點
-                    # if robot.out_range_step > OUT_RANGE_STEP and not robot.target_gived_by_server:
+                    # if robot.out_range_step > OUT_RANGE_STEP and not robot.target_given_by_server:
                     #     target_pos = robot.last_position_in_server_range
                     # else:
                     target_pos, action_idx, min_valid_dists = self.select_node(i)
                     if min_valid_dists > (robot.sensor_range * 1.5) and robot.out_range_step:
                         target_pos = robot.last_position_in_server_range
                     robot.target_pos = target_pos
-                    robot.target_gived_by_server = False
+                    robot.target_given_by_server = False
                     
                     # 規劃完整路徑（從當前位置到目標節點）
                     full_path = self.env.plan_local_path(i, target_pos)
@@ -92,10 +92,10 @@ class Worker:
                             robot.last_position_in_server_range = robot.position
                             self.env.server.robot_in_range[i] = True
                             robot.out_range_step = 0
-                            if not robot.target_gived_by_server:
+                            if not robot.target_given_by_server:
                                 robot.planned_path = []
                         else:
-                            if not robot.target_gived_by_server:
+                            if not robot.target_given_by_server:
                                 robot.out_range_step += 1
                             self.env.server.robot_in_range[i] = False
                         

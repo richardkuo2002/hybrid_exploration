@@ -16,7 +16,7 @@ class Robot():
         self.target_pos = None
         self.movement_history = []
         self.graph_generator:Graph_generator = None
-        self.target_gived_by_server = False
+        self.target_given_by_server = False
         self.last_position_in_server_range = None
         self.out_range_step = 0
         self.stay_count = 0
