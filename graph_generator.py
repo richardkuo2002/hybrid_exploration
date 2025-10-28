@@ -130,7 +130,7 @@ class Graph_generator:
                          if hasattr(node, 'coords'): # 檢查 node 是否有效
                             dist = np.linalg.norm(node.coords - robot_pos)
                             if dist < 10:
-                                node.observable_frontiers.clear()
+                                node.observable_frontiers_list.clear()
                                 node.utility = 0
                                 node.zero_utility_node = True
         
@@ -332,8 +332,11 @@ class Graph_generator:
                     for node in self.nodes_list:
                          if hasattr(node, 'coords'):
                             dist = np.linalg.norm(node.coords - robot_pos)
-                            if dist < 10:
-                                node.observable_frontiers.clear()
+                            if dist < 10: # 假設靠近就算佔用
+                                # <--- 修正點：使用正確的屬性名稱 ---
+                                if hasattr(node, 'observable_frontiers_list'):
+                                    node.observable_frontiers_list.clear() # 清空 list
+                                # --- ---
                                 node.utility = 0
                                 node.zero_utility_node = True
         
