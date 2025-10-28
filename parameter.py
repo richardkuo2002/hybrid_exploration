@@ -8,6 +8,16 @@ OUT_RANGE_STEP = 20
 MAX_EPS_STEPS=196
 K_SIZE = 30
 
+# --- 新增：效能優化參數 ---
+GRAPH_UPDATE_INTERVAL = 10  # 每 10 步才重建一次圖結構
+# --------------------------
+
+# --- 智慧會合機制參數 ---
+INFO_GAIN_HISTORY_LEN = 20
+MIN_INFO_GAIN_THRESHOLD = 50
+LOCAL_UTILITY_THRESHOLD = 10
+# ---------------------------------
+
 NUM_DENSE_COORDS_WIDTH=50
 CUR_AGENT_KNN_RAD=80
 GLOBAL_GRAPH_KNN_RAD=160

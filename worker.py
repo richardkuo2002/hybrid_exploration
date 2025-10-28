@@ -69,11 +69,10 @@ class Worker:
             )
             
             # === 階段三：繪圖與日誌 ===
+            # <--- 修改點：移除 PLOT_INTERVAL，恢復每幀繪圖 --- >
             if self.plot:
-                # 呼叫 plot_env (現在它也會儲存影格)
                 self.env.plot_env(step)
             else:
-                # 呼叫 plot_env_without_window (只儲存影格)
                 self.env.plot_env_without_window(step)
             
             msg = f"\rEP: {curr_episode} | Step {step:5d} | Coverage: {coverage * 100:6.2f}% "
@@ -109,13 +108,11 @@ class Worker:
 
 if __name__ == '__main__':
     
-    # --- 修改點：移除 parser.add_argument 之間的空行 ---
     parser = argparse.ArgumentParser(description="Run a single episode of the hybrid exploration simulation.")
     parser.add_argument('--TEST_MAP_INDEX', type=int, default=2, help='Index of the map to use for the test (default: 2)')
     parser.add_argument('--TEST_AGENT_NUM', type=int, default=3, help='Number of agents to use for the test (default: 3)')
-    parser.add_argument('--plot', action='store_true', help='Enable real-time plotting (will also save video if --no_save_video is not used)')
+    parser.add_argument('--plot', action=argparse.BooleanOptionalAction, default=False, help='Enable real-time plotting (will also save video if --no_save_video is not used)')
     parser.add_argument('--save_video', action=argparse.BooleanOptionalAction, default=True, help='Save the video at the end (default: True). Use --no_save_video to disable.')
-    # --- ---
 
     args = parser.parse_args()
 

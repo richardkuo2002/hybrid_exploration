@@ -4,7 +4,7 @@ from scipy.optimize import linear_sum_assignment
 
 from parameter import *
 from graph_generator import Graph_generator
-from graph import Graph, a_star # 需要匯入 a_star
+from graph import Graph, a_star
 
 class Server():
     def __init__(self, start_position, real_map_size, resolution, k_size, plot=False):
@@ -12,8 +12,8 @@ class Server():
         self.global_map = np.ones(real_map_size) * 127
         self.downsampled_map = None
         self.comm_range = SERVER_COMM_RANGE
-        self.all_robot_position = [] # 會由 robot 或 env 初始化
-        self.robot_in_range = [] # 會由 robot 或 env 初始化
+        self.all_robot_position = []
+        self.robot_in_range = []
         
         self.graph_generator:Graph_generator = Graph_generator(map_size=real_map_size, sensor_range=SENSOR_RANGE, k_size=k_size, plot=plot)
         self.graph_generator.route_node.append(start_position)
@@ -24,12 +24,15 @@ class Server():
         self.node_utility = []
         self.guidepost = []
         
-        self.resolution = resolution # 需要解析度
+        self.resolution = resolution
+        
+        # <--- 修改點：新增圖更新計數器 ---
+        self.graph_update_counter = 0
+        # --- ---
 
     def update_and_assign_tasks(self, robot_list, real_map, find_frontier_func):
         """
         執行一步的伺服器決策：更新全局地圖、圖結構，並指派任務。
-        取代舊 env.server_step()
         """
         
         # --- 1. 更新全局地圖與圖結構 ---
@@ -40,28 +43,47 @@ class Server():
         )
         new_frontiers = find_frontier_func(self.downsampled_map)
         
-        node_coords, graph, node_utility, guidepost = self.graph_generator.update_graph(
-            self.global_map,
-            new_frontiers,
-            self.frontiers,
-            self.position,
-            self.all_robot_position)
+        # <--- 修改點：使用計數器決定更新策略 ---
+        self.graph_update_counter += 1
+        if self.graph_update_counter % GRAPH_UPDATE_INTERVAL == 0:
+            # --- 執行昂貴的「結構重建」 ---
+            node_coords, graph, node_utility, guidepost = self.graph_generator.rebuild_graph_structure(
+                self.global_map,
+                new_frontiers,
+                self.frontiers, # 傳入舊的 frontiers
+                self.position,
+                self.all_robot_position # 傳入機器人位置
+            )
+            self.node_coords = node_coords
+            self.local_map_graph = graph
+            self.node_utility = node_utility
+            self.guidepost = guidepost
+        else:
+            # --- 執行輕量的「價值更新」 ---
+            node_utility, guidepost = self.graph_generator.update_node_utilities(
+                self.global_map,
+                new_frontiers,
+                self.frontiers, # 傳入舊的 frontiers
+                self.all_robot_position # 傳入機器人位置
+            )
+            # *** 注意：self.node_coords 和 self.local_map_graph 保持不變 ***
+            self.node_utility = node_utility
+            self.guidepost = guidepost
         
-        self.node_coords = node_coords
-        self.local_map_graph = graph
-        self.node_utility = node_utility
-        self.guidepost = guidepost
-        self.frontiers = new_frontiers
+        self.frontiers = new_frontiers # frontiers 必須每一步都更新
+        # --- ---
+        
         
         # --- 2. 篩選需要任務的機器人 ---
+        # ... (這部分邏輯不變) ...
         robots_need_assignment = []
         robot_positions = []
         
         for i, in_range in enumerate(self.robot_in_range):
             if in_range and self.all_robot_position[i] is not None:
                 robot = robot_list[i]
-                if robot.needs_new_target(): # 使用 robot 的方法
-                    robots_need_assignment.append(i)  # 機器人索引
+                if robot.needs_new_target():
+                    robots_need_assignment.append(i)
                     robot_positions.append(self.all_robot_position[i])
         
         # --- 檢查探索是否完成 ---
@@ -72,12 +94,11 @@ class Server():
         done = (total_frontiers == 0) or (coverage >= 0.95)
         
         if not robots_need_assignment:
-            # print("Server: No robots need assignment")
             return done, coverage
         
         # --- 3. 準備候選目標 ---
+        # ... (這部分邏輯不變) ...
         if len(self.graph_generator.target_candidates) < 1:
-            # print("Server: No target candidates available")
             return done, coverage
         
         candidates = np.array([list(coord) for coord in self.graph_generator.target_candidates])
@@ -88,12 +109,12 @@ class Server():
         )
         
         if len(available_candidates) == 0:
-            # print("Server: No available targets after filtering")
             return done, coverage
         
         # --- 4. 準備匈牙利演算法 ---
-        m = len(robots_need_assignment)  # 機器人數量
-        k = len(available_candidates)    # 目標數量
+        # ... (這部分邏輯不變) ...
+        m = len(robots_need_assignment)
+        k = len(available_candidates)
         
         if k < m:
             sorted_indices = np.argsort(-available_utilities)
@@ -112,8 +133,9 @@ class Server():
             k = m
         
         # --- 5. 建立成本矩陣 ---
+        # ... (這部分邏輯不變) ...
         cost_matrix = np.zeros((m, k))
-        lambda_dist = 1.1  # 距離權重係數 (來自舊 env.py)
+        lambda_dist = 1.1
         
         for i, robot_pos in enumerate(robot_positions):
             for j, candidate in enumerate(available_candidates):
@@ -122,6 +144,7 @@ class Server():
                 cost_matrix[i, j] = -utility + lambda_dist * distance
         
         # --- 6. 執行匈牙利演算法 ---
+        # ... (這部分邏輯不變) ...
         try:
             row_indices, col_indices = linear_sum_assignment(cost_matrix)
         except Exception as e:
@@ -129,6 +152,7 @@ class Server():
             return done, coverage
         
         # --- 7. 執行指派 ---
+        # ... (這部分邏輯不變) ...
         for i, j in zip(row_indices, col_indices):
             robot_idx:int = robots_need_assignment[i]
             target = available_candidates[j]
@@ -138,24 +162,21 @@ class Server():
             
             try:
                 robot.planned_path = self._plan_global_path(robot.position, robot.target_pos)
-                robot.target_given_by_server = True # 標記為伺服器指派
+                robot.target_gived_by_server = True
                 
                 if not robot.planned_path or len(robot.planned_path) == 0:
                     robot.target_pos = None
-                    robot.target_given_by_server = False
+                    robot.target_gived_by_server = False
                     
             except Exception as e:
                 print(f"Server: Path planning failed for Robot {robot_idx}: {e}")
                 robot.target_pos = None
-                robot.target_given_by_server = False
+                robot.target_gived_by_server = False
         
         return done, coverage
 
     def _filter_occupied_targets(self, candidates, utilities, robot_list, requesting_robots):
-        """
-        過濾掉已被其他機器人佔據或指派的目標
-        (從 env.py 搬移過來)
-        """
+        # ... (_filter_occupied_targets 保持不變) ...
         available_mask = np.ones(len(candidates), dtype=bool)
         
         for i, robot in enumerate(robot_list):
@@ -178,10 +199,7 @@ class Server():
         return candidates[available_mask], utilities[available_mask]
         
     def _plan_global_path(self, current_pos, target_pos):
-        """
-        回傳從當前機器人位置到 target 的完整節點路徑（list of coords）
-        (從 env.py 搬移過來)
-        """
+        # ... (_plan_global_path 保持不變) ...
         gen = self.graph_generator
         current = current_pos
         target = target_pos
