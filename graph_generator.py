@@ -2,92 +2,96 @@ import copy
 import numpy as np
 from scipy.spatial import KDTree
 from time import time
+import logging
 
 from parameter import *
 from graph import Graph, a_star
 from node import Node
 from utils import check_collision
 
+logger = logging.getLogger(__name__)
+
 class Graph_generator:
     def __init__(self, map_size, k_size, sensor_range, plot=False):
         self.k_size = k_size
         self.graph = Graph()
-        self.node_coords = None # ndarray (N, 2)
-        self.nodes_list: list[Node] = [] # list of Node objects
-        self.node_utility = None # ndarray (N,)
-        self.target_candidates = np.array([]).reshape(0, 2) # ndarray (M, 2)
-        self.candidates_utility = np.array([]) # ndarray (M,)
-        self.guidepost = None # ndarray (N, 1)
-
+        self.node_coords = None
+        self.nodes_list: list[Node] = []
+        self.node_utility = None
+        self.target_candidates = np.array([]).reshape(0, 2)
+        self.candidates_utility = np.array([])
+        self.guidepost = None
         self.plot = plot
-        self.x = [] # For plotting edges
-        self.y = [] # For plotting edges
-        self.map_x = map_size[1]
-        self.map_y = map_size[0]
+        self.x = []; self.y = []
+        self.map_x = map_size[1]; self.map_y = map_size[0]
         self.uniform_points = self.generate_uniform_points()
         self.sensor_range = sensor_range
-        self.route_node = [] # list of coords added manually
+        self.route_node = []
 
-    def edge_clear_all_nodes(self):
-        self.graph = Graph()
-        self.x = []; self.y = []
-
-    def edge_clear(self, coords):
-        self.graph.clear_edge(tuple(coords))
-
-    def node_clear(self, coords, remove_bidirectional_edges=False):
-        self.graph.clear_node(tuple(coords), remove_bidirectional_edges=remove_bidirectional_edges)
+    def edge_clear_all_nodes(self): self.graph = Graph(); self.x = []; self.y = []
+    def edge_clear(self, coords): self.graph.clear_edge(tuple(coords))
+    def node_clear(self, coords, remove_bidirectional_edges=False): self.graph.clear_node(tuple(coords), remove_bidirectional_edges=remove_bidirectional_edges)
 
     def generate_graph(self, robot_location, robot_map, frontiers):
-        """
-        (初始化時呼叫) 建立初始的無碰撞圖。
-        """
+        """ (初始化時呼叫) 建立初始圖 """
         self.edge_clear_all_nodes()
         free_area = self.free_area(robot_map)
-
-        free_area_complex = free_area[:, 0] + free_area[:, 1] * 1j
-        uniform_points_complex = self.uniform_points[:, 0] + self.uniform_points[:, 1] * 1j
-        _, _, candidate_indices = np.intersect1d(free_area_complex, uniform_points_complex, return_indices=True)
-
-        valid_candidate_indices = candidate_indices[candidate_indices < len(self.uniform_points)]
-        node_coords = self.uniform_points[valid_candidate_indices]
-
-        node_coords = np.concatenate((np.array(robot_location).reshape(1, 2), node_coords))
-        self.node_coords = np.unique(node_coords, axis=0)
+        if len(free_area) == 0: # 如果一開始就沒有自由空間
+             logger.warning("No free area found in initial map for graph generation.")
+             self.node_coords = np.array(robot_location).reshape(1, 2) # 至少包含起始點
+             self.graph = Graph(); self.graph.add_node(tuple(robot_location)) # 空圖
+        else:
+            free_area_complex = free_area[:, 0] + free_area[:, 1] * 1j
+            uniform_points_complex = self.uniform_points[:, 0] + self.uniform_points[:, 1] * 1j
+            # assume_unique=True 可能導致問題，移除
+            _, _, candidate_indices = np.intersect1d(free_area_complex, uniform_points_complex, return_indices=True)
+            valid_candidate_indices = candidate_indices[candidate_indices < len(self.uniform_points)]
+            node_coords = self.uniform_points[valid_candidate_indices]
+            node_coords = np.concatenate((np.array(robot_location).reshape(1, 2), node_coords))
+            self.node_coords = np.unique(node_coords, axis=0)
 
         if len(self.node_coords) > 0:
             self.find_k_neighbor_all_nodes(robot_map, update_dense=True)
         else:
-             print("Warning: No nodes generated in generate_graph.")
+             logger.warning("No nodes generated in generate_graph.")
              self.graph = Graph()
 
-        self._update_nodes_and_utilities(frontiers, robot_map)
+        current_frontiers = frontiers if frontiers is not None else np.array([]).reshape(0, 2)
+        self._update_nodes_and_utilities(current_frontiers, robot_map, old_frontiers=None, all_robot_positions=None)
         self._update_guidepost()
-
         return self.node_coords, self.graph.edges, self.node_utility, self.guidepost
 
-    def update_graph(self, robot_map, frontiers, old_frontiers, position, all_robot_positions=None):
-        """
-        (每一步呼叫) 完整更新圖結構和節點效益。
-        """
-        # 1. 計算新的有效節點座標
+    def update_node_utilities(self, robot_map, frontiers, old_frontiers, all_robot_positions=None):
+        """ (輕量級) 僅更新節點效益 """
+        logger.debug("Updating node utilities...")
+        current_frontiers = frontiers if frontiers is not None else np.array([]).reshape(0, 2)
+        current_old_frontiers = old_frontiers if old_frontiers is not None else np.array([]).reshape(0, 2)
+        self._update_nodes_and_utilities(current_frontiers, robot_map, old_frontiers=current_old_frontiers, all_robot_positions=all_robot_positions)
+        self._update_guidepost()
+        return self.node_utility, self.guidepost
+
+    def rebuild_graph_structure(self, robot_map, frontiers, old_frontiers, position, all_robot_positions=None):
+        """ (昂貴) 重建圖結構和節點效益 """
+        logger.debug("Rebuilding graph structure...")
+        # 1. 計算新節點座標
         free_area = self.free_area(robot_map)
-        free_area_complex = free_area[:, 0] + free_area[:, 1] * 1j
-        uniform_points_complex = self.uniform_points[:, 0] + self.uniform_points[:, 1] * 1j
-        _, _, candidate_indices = np.intersect1d(free_area_complex, uniform_points_complex, return_indices=True)
-
-        valid_candidate_indices = candidate_indices[candidate_indices < len(self.uniform_points)]
-        new_potential_nodes = self.uniform_points[valid_candidate_indices]
-        current_pos_arr = np.array(position).reshape(1, 2)
-
-        new_node_coords = np.concatenate((current_pos_arr, new_potential_nodes))
-        new_node_coords = np.unique(new_node_coords, axis=0)
+        if len(free_area) == 0:
+             logger.warning("No free area found during rebuild.")
+             new_node_coords = np.array(position).reshape(1, 2) # 至少包含當前位置
+        else:
+            free_area_complex = free_area[:, 0] + free_area[:, 1] * 1j
+            uniform_points_complex = self.uniform_points[:, 0] + self.uniform_points[:, 1] * 1j
+            _, _, candidate_indices = np.intersect1d(free_area_complex, uniform_points_complex, return_indices=True) # assume_unique 移除
+            valid_candidate_indices = candidate_indices[candidate_indices < len(self.uniform_points)]
+            new_potential_nodes = self.uniform_points[valid_candidate_indices]
+            current_pos_arr = np.array(position).reshape(1, 2)
+            new_node_coords = np.concatenate((current_pos_arr, new_potential_nodes))
+            new_node_coords = np.unique(new_node_coords, axis=0)
 
         # 2. 比較新舊節點
         old_node_coords = self.node_coords if self.node_coords is not None else np.array([]).reshape(0, 2)
         old_nodes_set = set(map(tuple, old_node_coords))
         new_nodes_set = set(map(tuple, new_node_coords))
-
         nodes_to_remove = old_nodes_set - new_nodes_set
         nodes_to_add = new_nodes_set - old_nodes_set
 
@@ -100,11 +104,11 @@ class Graph_generator:
 
         # 5. 創建新增 Node 物件
         existing_coords_set = set(tuple(node.coords) for node in self.nodes_list if hasattr(node, 'coords'))
-        current_frontiers = frontiers if frontiers is not None else np.array([]).reshape(0, 2) # 確保 frontiers 有效
+        current_frontiers = frontiers if frontiers is not None else np.array([]).reshape(0, 2)
         for coords_tuple in nodes_to_add:
             if coords_tuple not in existing_coords_set:
                 coords = np.array(coords_tuple)
-                new_node = Node(coords, current_frontiers, robot_map) # 使用 current_frontiers
+                new_node = Node(coords, current_frontiers, robot_map)
                 self.nodes_list.append(new_node)
 
         # 6. 重建圖邊緣
@@ -112,46 +116,38 @@ class Graph_generator:
         if len(self.node_coords) > 0:
             self.find_k_neighbor_all_nodes(robot_map, update_dense=True)
         else:
-             print("Warning: No nodes available in update_graph after coordinate update.")
+             logger.warning("No nodes available in rebuild_graph_structure.")
 
-        # 7. 更新所有節點效益
-        self._update_nodes_and_utilities(frontiers, robot_map, old_frontiers=old_frontiers, all_robot_positions=all_robot_positions)
+        # 7. 重建後立即更新效益
+        current_old_frontiers = old_frontiers if old_frontiers is not None else np.array([]).reshape(0, 2)
+        self._update_nodes_and_utilities(current_frontiers, robot_map, old_frontiers=current_old_frontiers, all_robot_positions=all_robot_positions)
 
         # 8. 更新 guidepost
         self._update_guidepost()
-
         return self.node_coords, self.graph.edges, self.node_utility, self.guidepost
 
-    # --- 輔助函式 ---
-
     def _update_nodes_and_utilities(self, frontiers, robot_map, old_frontiers=None, all_robot_positions=None):
-        """
-        (內部函式) 更新節點效益並重新生成相關列表/陣列。
-        """
+        """ (內部) 更新節點效益 """
+        # ... (安全檢查和邊界變化計算) ...
         if self.nodes_list is None: self.nodes_list = []
         if frontiers is None: frontiers = np.array([]).reshape(0, 2)
         if old_frontiers is None: old_frontiers = np.array([]).reshape(0, 2)
-
-        observed_frontiers_set = set()
-        new_frontiers_only = frontiers
+        observed_frontiers_set = set(); new_frontiers_only = frontiers
         if len(old_frontiers) > 0 and len(frontiers) > 0:
-            old_frontiers_complex = old_frontiers[:, 0] + old_frontiers[:, 1] * 1j
-            new_frontiers_complex = frontiers[:, 0] + frontiers[:, 1] * 1j
-            observed_mask = ~np.isin(old_frontiers_complex, new_frontiers_complex)
-            new_only_mask = ~np.isin(new_frontiers_complex, old_frontiers_complex)
-            observed_frontiers = old_frontiers[observed_mask]
-            new_frontiers_only = frontiers[new_only_mask]
-            observed_frontiers_set = set(map(tuple, observed_frontiers))
-        elif len(old_frontiers) == 0:
-             new_frontiers_only = frontiers
+            old_set = set(map(tuple, old_frontiers)); new_set = set(map(tuple, frontiers))
+            observed_frontiers_set = old_set - new_set
+            new_frontiers_only_set = new_set - old_set
+            new_frontiers_only = np.array(list(new_frontiers_only_set)) if new_frontiers_only_set else np.array([]).reshape(0, 2)
+        elif len(old_frontiers) == 0: new_frontiers_only = frontiers
 
+        # 更新效益
         for node in self.nodes_list:
              if hasattr(node, 'update_observable_frontiers'):
-                if len(old_frontiers) > 0:
-                     node.update_observable_frontiers(observed_frontiers_set, new_frontiers_only, robot_map)
-                else:
-                     node.reset_observable_frontiers(frontiers, robot_map)
+                 # 檢查傳入的 new_frontiers_only 是否有效
+                 valid_new_frontiers = new_frontiers_only if isinstance(new_frontiers_only, np.ndarray) and new_frontiers_only.ndim == 2 else np.array([]).reshape(0,2)
+                 node.update_observable_frontiers(observed_frontiers_set, valid_new_frontiers, robot_map)
 
+        # 處理佔用
         if all_robot_positions is not None:
             for robot_pos in all_robot_positions:
                 if robot_pos is not None:
@@ -160,74 +156,65 @@ class Graph_generator:
                             dist = np.linalg.norm(node.coords - robot_pos)
                             if dist < 10: node.set_visited()
 
-        self.target_candidates = []
-        self.candidates_utility = []
-        node_utilities_list = []
+        # 重新生成列表
+        self.target_candidates = []; self.candidates_utility = []; node_utilities_list = []
+        final_node_coords = []
+        if self.nodes_list is not None:
+            for node in self.nodes_list:
+                if hasattr(node, 'coords') and hasattr(node, 'utility'):
+                     final_node_coords.append(node.coords)
+                     utility = node.utility
+                     node_utilities_list.append(utility)
+                     if utility > 0:
+                         self.target_candidates.append(node.coords)
+                         self.candidates_utility.append(utility)
 
-        coords_map = {tuple(node.coords): node for node in self.nodes_list if hasattr(node, 'coords')}
-        final_nodes_list = []
-
-        if self.node_coords is not None:
-            for i in range(len(self.node_coords)):
-                coords = self.node_coords[i]
-                node = coords_map.get(tuple(coords))
-                if node is None:
-                     node = Node(coords, frontiers, robot_map)
-
-                final_nodes_list.append(node)
-
-                if hasattr(node, 'utility'):
-                    utility = node.utility
-                    node_utilities_list.append(utility)
-                    if utility > 0:
-                        self.target_candidates.append(coords)
-                        self.candidates_utility.append(utility)
-                else:
-                     node_utilities_list.append(0)
-
-        self.nodes_list = final_nodes_list
+        # 與 node_coords 同步 (關鍵)
+        self.node_coords = np.array(final_node_coords) if final_node_coords else np.array([]).reshape(0, 2)
         self.node_utility = np.array(node_utilities_list) if node_utilities_list else np.array([])
         self.target_candidates = np.array(self.target_candidates) if self.target_candidates else np.array([]).reshape(0, 2)
         self.candidates_utility = np.array(self.candidates_utility) if self.candidates_utility else np.array([])
 
+        # 長度檢查 (Debug 用)
+        if len(self.node_coords) != len(self.nodes_list) or len(self.node_coords) != len(self.node_utility):
+             logger.warning(f"_update_nodes_and_utilities length mismatch! coords:{len(self.node_coords)}, list:{len(self.nodes_list)}, util:{len(self.node_utility)}")
+             # 不再強制截斷，讓上層處理
+
     def _update_guidepost(self):
-        """
-        (內部函式) 更新 guidepost。
-        """
+        """ (內部) 更新 guidepost """
         if self.node_coords is not None and len(self.node_coords) > 0:
             self.guidepost = np.zeros((len(self.node_coords), 1))
             for node_pos in self.route_node:
                 index = self.find_closest_index_from_coords(self.node_coords, node_pos)
-                if index is not None and index < len(self.guidepost):
-                    self.guidepost[index] += 1
-        else:
-            self.guidepost = np.array([]).reshape(0, 1)
+                if index is not None and index < len(self.guidepost): self.guidepost[index] += 1
+        else: self.guidepost = np.array([]).reshape(0, 1)
 
-
+    # --- find_shortest_path, generate_uniform_points, free_area, find_closest_index_from_coords ---
+    # --- find_k_neighbor_all_nodes ---
+    # (保持不變)
     def find_shortest_path(self, current, destination, node_coords, graph):
         if node_coords is None or len(node_coords) == 0 or graph is None or not hasattr(graph, 'nodes'):
+            logger.warning(f"Invalid input for find_shortest_path. Target:{destination}")
             return 1e5, None
-
         start_index = self.find_closest_index_from_coords(node_coords, current)
         end_index = self.find_closest_index_from_coords(node_coords, destination)
-
-        if start_index is None or end_index is None: return 1e5, None
-
-        start_node = tuple(node_coords[start_index])
-        end_node = tuple(node_coords[end_index])
-
-        if start_node not in graph.nodes or end_node not in graph.nodes: return 1e5, None
-        if start_node not in graph.edges or not graph.edges[start_node]:
+        if start_index is None or end_index is None:
+             logger.warning(f"Cannot find node index. Start:{start_index}, End:{end_index}")
+             return 1e5, None
+        start_node = tuple(node_coords[start_index]); end_node = tuple(node_coords[end_index])
+        if start_node not in graph.nodes or end_node not in graph.nodes:
+             logger.warning(f"Start ({start_node}) or End ({end_node}) node not in graph nodes set.")
+             return 1e5, None
+        if start_node not in graph.edges or not graph.edges.get(start_node):
+             logger.warning(f"Start node {start_node} has no outgoing edges.")
              if start_node == end_node: return 0, [start_node]
              return 1e5, None
-
         route, dist, _, _ = a_star(start_node, end_node, graph)
-
-        if start_node != end_node and route is None: return dist, None
+        if start_node != end_node and route is None:
+             logger.warning(f"A* failed path from {start_node} to {end_node}")
+             return dist, None
         if route is not None: route = list(map(tuple, route))
-
         return dist, route
-
 
     def generate_uniform_points(self):
         x = np.linspace(0, self.map_x - 1, NUM_DENSE_COORDS_WIDTH).round().astype(int)
@@ -242,52 +229,45 @@ class Graph_generator:
     def find_closest_index_from_coords(self, node_coords, p):
         if node_coords is None or len(node_coords) == 0: return None
         if not isinstance(p, np.ndarray): p = np.array(p)
-        if p.shape != (2,): return None
+        if p.shape != (2,): logger.warning(f"Invalid point shape {p.shape} in find_closest"); return None
         try: return np.argmin(np.linalg.norm(node_coords - p, axis=1))
-        except ValueError: return None
-
+        except ValueError: logger.error("ValueError in find_closest_index", exc_info=True); return None
 
     def find_k_neighbor_all_nodes(self, robot_map, update_dense=True, global_graph:Graph=None, global_graph_knn_dist_max=GLOBAL_GRAPH_KNN_RAD, global_graph_knn_dist_min=CUR_AGENT_KNN_RAD):
         if self.node_coords is None or len(self.node_coords) == 0: return
         try: kd_tree = KDTree(self.node_coords)
-        except ValueError: return
+        except (ValueError, IndexError) as e: logger.error(f"KDTree Error: {e}"); return
 
-        self.x = []; self.y = [] # Reset plot lists
+        self.x = []; self.y = []
 
         for i, p in enumerate(self.node_coords):
             p_tuple = tuple(p)
             num_global_neighbours = 0
-            # --- Global Graph Logic ---
-            topk_global_graph_nodes = set() # <--- 修改點：在這裡初始化
-
+            topk_global_graph_nodes = set()
             if global_graph is not None and hasattr(global_graph, 'edges') and p_tuple in global_graph.edges:
-                global_graph_edges = global_graph.edges[p_tuple].values()
-                global_graph_nodes_arr = np.array([edge.to_node for edge in global_graph_edges])
-                global_graph_dist_arr = np.array([edge.length for edge in global_graph_edges])
+                # ... (global graph logic) ...
+                try: # 加強保護
+                    global_graph_edges = global_graph.edges[p_tuple].values()
+                    global_graph_nodes_arr = np.array([edge.to_node for edge in global_graph_edges])
+                    global_graph_dist_arr = np.array([edge.length for edge in global_graph_edges])
+                    if global_graph_nodes_arr.ndim == 2 and global_graph_dist_arr.ndim == 1 and len(global_graph_nodes_arr) == len(global_graph_dist_arr):
+                        filtered_idx = (global_graph_dist_arr <= global_graph_knn_dist_max) & (global_graph_dist_arr > global_graph_knn_dist_min)
+                        filtered_nodes = global_graph_nodes_arr[filtered_idx]
+                        filtered_dist = global_graph_dist_arr[filtered_idx]
+                        num_available = len(filtered_nodes)
+                        num_global_neighbours = min(num_available, self.k_size)
+                        if num_global_neighbours > 0:
+                            topk_indices = np.argsort(filtered_dist)[:num_global_neighbours]
+                            topk_global_graph_nodes = set(map(tuple, filtered_nodes[topk_indices]))
+                except Exception as e:
+                     logger.warning(f"Error processing global graph edges for {p_tuple}: {e}")
 
-                if global_graph_nodes_arr.ndim == 2 and global_graph_dist_arr.ndim == 1 and len(global_graph_nodes_arr) == len(global_graph_dist_arr):
-                    filtered_idx = (global_graph_dist_arr <= global_graph_knn_dist_max) & (global_graph_dist_arr > global_graph_knn_dist_min)
-                    filtered_nodes = global_graph_nodes_arr[filtered_idx]
-                    filtered_dist = global_graph_dist_arr[filtered_idx]
-
-                    num_available = len(filtered_nodes)
-                    num_global_neighbours = min(num_available, self.k_size)
-
-                    if num_global_neighbours > 0:
-                        topk_indices = np.argsort(filtered_dist)[:num_global_neighbours]
-                        # <--- 修改點：賦值給 topk_global_graph_nodes ---
-                        topk_global_graph_nodes = set(map(tuple, filtered_nodes[topk_indices]))
-                        # --- ---
-
-            # 現在 topk_global_graph_nodes 總是被定義了 (即使是空集合)
             for neighbour_node in topk_global_graph_nodes:
                 self.graph.add_node(p_tuple)
                 neighbour_tuple = tuple(neighbour_node)
                 dist = np.linalg.norm(np.array(p_tuple) - np.array(neighbour_tuple))
                 self.graph.add_edge(p_tuple, neighbour_tuple, dist)
-            # --- End Global Graph Logic ---
 
-            # --- Local Graph Logic (KDTree) ---
             max_neighbours = self.k_size - num_global_neighbours
             num_neighbours_available = len(self.node_coords)
             k_query = min(max(1, max_neighbours), num_neighbours_available)
@@ -296,7 +276,7 @@ class Graph_generator:
                 try:
                     distances, indices = kd_tree.query(p, k=k_query)
                     if np.isscalar(indices): indices = np.array([indices])
-                except ValueError: indices = []
+                except (ValueError, IndexError) as e: logger.warning(f"KDTree query failed k={k_query}: {e}"); indices = []
 
             for index in indices:
                 if index < 0 or index >= len(self.node_coords): continue
@@ -307,10 +287,10 @@ class Graph_generator:
                     if not check_collision(start, end, robot_map):
                         start_tuple = tuple(start); end_tuple = tuple(end)
                         if update_dense:
-                            self.graph.add_node(start_tuple)
                             dist = np.linalg.norm(start-end)
+                            if start_tuple not in self.graph.nodes: self.graph.add_node(start_tuple)
+                            if end_tuple not in self.graph.nodes: self.graph.add_node(end_tuple)
                             self.graph.add_edge(start_tuple, end_tuple, dist)
-                            self.graph.add_node(end_tuple)
                             self.graph.add_edge(end_tuple, start_tuple, dist)
                         if self.plot:
                             self.x.append([p[0], neighbour[0]])
