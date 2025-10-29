@@ -37,7 +37,7 @@ def sensor_work(robot_position, sensor_range, robot_local_map, real_map):
         
         # 呼叫 JIT 編譯過的 check_collision
         # 注意：check_collision 現在應該回傳修改後的 map
-        local_map_copy = _sensor_collision_check_wrapper(x0, y0, x1, y1, real_map, local_map_copy, map_height, map_width)
+        local_map_copy = _sensor_collision_check_wrapper(x0, y0, x1, y1, real_map, local_map_copy, map_height, map_width, sensor_range)
 
         sensor_angle += sensor_angle_inc
         
@@ -52,7 +52,7 @@ def sensor_work(robot_position, sensor_range, robot_local_map, real_map):
 # 這裡我們先創建一個模擬的 JIT 內部輔助函式，它執行類似 check_collision 的邏輯
 # 但直接修改傳入的 local_map_copy
 @jit(nopython=True)
-def _sensor_collision_check_wrapper(x0_f, y0_f, x1_f, y1_f, real_map, local_map_copy, map_height, map_width):
+def _sensor_collision_check_wrapper(x0_f, y0_f, x1_f, y1_f, real_map, local_map_copy, map_height, map_width, sensor_range):
     """ Internal JIT helper for line checking, modifies local_map_copy """
     # Numba 需要整數索引
     x0, y0 = int(round(x0_f)), int(round(y0_f))
@@ -85,7 +85,7 @@ def _sensor_collision_check_wrapper(x0_f, y0_f, x1_f, y1_f, real_map, local_map_
 
         # 更新 local map (只更新 free 和 obstacle)
         if k == 1 or k == 255: # 假設 1=obs, 255=free
-             local_map_copy[y, x] = k
+            local_map_copy[y, x] = k
 
         # 碰到障礙物停止
         if k == 1:
@@ -110,9 +110,9 @@ def _sensor_collision_check_wrapper(x0_f, y0_f, x1_f, y1_f, real_map, local_map_
         # 檢查是否超出 sensor_range (近似)
         # Numba 不支援 np.linalg.norm, 手動計算
         current_dist_sq = (x - x0)**2 + (y - y0)**2
-        # sensor_range_sq = sensor_range**2 # 在外部計算傳入會更好
-        # if current_dist_sq > sensor_range_sq:
-        #    break # 超出範圍
+        sensor_range_sq = sensor_range**2 # 在外部計算傳入會更好
+        if current_dist_sq > sensor_range_sq:
+            break # 超出範圍
 
     return local_map_copy
 
