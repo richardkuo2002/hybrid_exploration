@@ -1,5 +1,6 @@
 from skimage import io
 import os
+import sys
 from skimage.measure import block_reduce
 import numpy as np
 import matplotlib.pylab as plt
