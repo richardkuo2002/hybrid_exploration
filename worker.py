@@ -120,7 +120,7 @@ class Worker:
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description="Run a single episode of the hybrid exploration simulation.")
-    parser.add_argument('--TEST_MAP_INDEX', type=int, default=2, help='Index of the map to use for the test (default: 2)')
+    parser.add_argument('--TEST_MAP_INDEX', type=int, default=1, help='Index of the map to use for the test (default: 2)')
     parser.add_argument('--TEST_AGENT_NUM', type=int, default=3, help='Number of agents to use for the test (default: 3)')
     parser.add_argument('--plot', action='store_true', help='Enable real-time plotting (will also save video if --no_save_video is not used)')
     parser.add_argument('--save_video', action=argparse.BooleanOptionalAction, default=True, help='Save the video at the end (default: True). Use --no_save_video to disable.')
