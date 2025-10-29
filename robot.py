@@ -7,6 +7,10 @@ from graph_generator import Graph_generator
 from sensor import sensor_work
 from skimage.measure import block_reduce
 import sys
+# <--- 匯入 Graph 和 Edge ---
+from graph import Graph, Edge
+# --- ---
+
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +22,7 @@ class Robot():
         self.sensor_range = SENSOR_RANGE
         self.frontiers = []
         self.node_coords = None # Initialize as None
-        self.local_map_graph = None # Initialize as None
+        self.local_map_graph = None # Initialize as None (This will store graph.edges dict)
         self.node_utility = None # Initialize as None
         self.guidepost = None # Initialize as None
         self.planned_path = []
@@ -102,7 +106,6 @@ class Robot():
         if self.graph_update_counter % GRAPH_UPDATE_INTERVAL == 0:
             logger.debug(f"[R{self.robot_id} Awareness] Rebuilding graph structure...")
             try:
-                # <--- 使用 rebuild_graph_structure ---
                 node_coords, graph_edges, node_utility, guidepost = self.graph_generator.rebuild_graph_structure(
                     self.local_map, new_frontiers, self.frontiers, self.position
                 )
@@ -115,28 +118,23 @@ class Robot():
         else:
             logger.debug(f"[R{self.robot_id} Awareness] Updating node utilities...")
             try:
-                # <--- 使用 update_node_utilities ---
-                # <--- 修正：確保傳遞 all_robot_positions (雖然 robot 本地圖更新時可能不需要) ---
-                # node_utility, guidepost = self.graph_generator.update_node_utilities(
-                #     self.local_map, new_frontiers, self.frontiers, all_robot_positions=[r.position for r in all_robots] # 傳遞當前所有機器人位置
-                # )
-                # ---> 或者 Robot 只更新自己的？Server 才考慮 others?
-                # 暫時不傳 all_robot_positions 給 robot 的 update_node_utilities
                 node_utility, guidepost = self.graph_generator.update_node_utilities(
                     self.local_map, new_frontiers, self.frontiers
                 )
-
                 self.node_utility = node_utility
                 self.guidepost = guidepost
+                # --- 同步 local_map_graph ---
+                # 即使只更新 utility，也要確保 local_map_graph 指向最新的 graph_generator.graph.edges
+                if hasattr(self.graph_generator, 'graph') and hasattr(self.graph_generator.graph, 'edges'):
+                     self.local_map_graph = self.graph_generator.graph.edges
+                # --- ---
             except Exception as e:
                  logger.error(f"Robot {self.robot_id} failed update_node_utilities: {e}", exc_info=True)
 
         self.frontiers = new_frontiers
 
-    # ... (needs_new_target, decide_next_target, move_one_step, _select_node, _plan_local_path 保持不變) ...
-    # (確保它們使用了 logger.debug 而不是 print)
+    # ... (needs_new_target, decide_next_target, move_one_step, _select_node 保持不變) ...
     def needs_new_target(self):
-         # Returning needs check path empty in decide_next_target
          return len(self.planned_path) < 1
 
     def decide_next_target(self, all_robots):
@@ -280,28 +278,40 @@ class Robot():
         return selected_coord, original_idx, min_valid_dists
 
     def _plan_local_path(self, target, avoid_pos=None):
+        """
+        回傳本地路徑 (使用 logger)。
+        """
         gen = self.graph_generator; current = self.position
         if avoid_pos is not None: pass
-        coords = gen.node_coords; graph = gen.local_map_graph # <--- 使用 local_map_graph
-        if coords is None or len(coords) == 0 or graph is None or not isinstance(graph, dict): # graph 是 dict
-             logger.warning(f"[R{self.robot_id} PlanLocal] Invalid graph/nodes for target {target}. Coords:{coords is not None}, Graph:{graph is not None}")
+        # <--- 修改點：讀取 Robot 自身的 node_coords 和 local_map_graph ---
+        coords = self.node_coords
+        graph_edges = self.local_map_graph # 這是 dict
+        # --- ---
+
+        if coords is None or len(coords) == 0 or graph_edges is None or not isinstance(graph_edges, dict):
+             logger.warning(f"[R{self.robot_id} PlanLocal] Invalid graph/nodes for target {target}. Coords:{coords is not None}, Graph:{graph_edges is not None}")
              return [current]
-        # <--- 需要將 graph (dict) 轉換為 Graph 物件 ---
+
+        # --- 將 graph_edges (dict) 轉換為 Graph 物件 ---
         graph_obj = Graph()
         if coords is not None:
-             for node_coord in coords: graph_obj.add_node(tuple(node_coord))
-        if isinstance(graph, dict):
-             for from_node_tuple, edges_dict in graph.items():
+             # <--- 修正: 確保 coords 是可迭代的 ---
+             try:
+                 for node_coord in coords: graph_obj.add_node(tuple(node_coord))
+             except TypeError:
+                  logger.error(f"[R{self.robot_id} PlanLocal] Coords are not iterable? Type: {type(coords)}")
+                  return [current] # 無法處理，返回
+        if isinstance(graph_edges, dict):
+             for from_node_tuple, edges_dict in graph_edges.items():
+                 if from_node_tuple not in graph_obj.nodes: graph_obj.add_node(from_node_tuple)
                  if isinstance(edges_dict, dict):
                       for to_node_tuple, edge_obj in edges_dict.items():
-                          if isinstance(edge_obj, Edge): # 假設 graph 存的是 Edge 物件
-                               graph_obj.add_edge(from_node_tuple, to_node_tuple, edge_obj.length)
-                          # else: # 如果存的不是 Edge 物件，需要不同處理
-                          #     logger.warning(f"Unexpected edge data type: {type(edge_obj)}")
-
-        # 現在使用 graph_obj 進行 A*
-        dist, route = gen.find_shortest_path(current, target, coords, graph_obj) # 傳入 graph_obj
+                          if to_node_tuple not in graph_obj.nodes: graph_obj.add_node(to_node_tuple)
+                          if isinstance(edge_obj, Edge): graph_obj.add_edge(from_node_tuple, to_node_tuple, edge_obj.length)
+                          else: logger.warning(f"Unexpected edge type: {type(edge_obj)}")
         # --- ---
+
+        dist, route = gen.find_shortest_path(current, target, coords, graph_obj) # 使用 graph_obj
         path_len = len(route) if route is not None else 0
         logger.debug(f"[R{self.robot_id} PlanLocal] Target:{target}. A* Result:{'Success' if route is not None else 'Failed!'}, Dist:{dist:.1f}, PathLen:{path_len}")
         if route is None or dist >= 1e5: return [current]

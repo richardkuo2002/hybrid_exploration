@@ -123,7 +123,7 @@ class Worker:
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Run a single episode...")
-    parser.add_argument('--TEST_MAP_INDEX', type=int, default=0, help='Map index (default: 0)')
+    parser.add_argument('--TEST_MAP_INDEX', type=int, default=1, help='Map index (default: 1)')
     parser.add_argument('--TEST_AGENT_NUM', type=int, default=3, help='Number of agents (default: 3)')
     parser.add_argument('--plot', action='store_true', help='Enable real-time plotting')
     parser.add_argument('--save_video', action=argparse.BooleanOptionalAction, default=True, help='Save video (default: True)')
