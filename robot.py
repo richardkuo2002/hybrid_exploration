@@ -7,10 +7,7 @@ from graph_generator import Graph_generator
 from sensor import sensor_work
 from skimage.measure import block_reduce
 import sys
-# <--- 匯入 Graph 和 Edge ---
-from graph import Graph, Edge
-# --- ---
-
+from graph import Graph, Edge # <--- 確保匯入 Graph 和 Edge
 
 logger = logging.getLogger(__name__)
 
@@ -21,15 +18,16 @@ class Robot():
         self.downsampled_map = None
         self.sensor_range = SENSOR_RANGE
         self.frontiers = []
-        self.node_coords = None # Initialize as None
-        self.local_map_graph = None # Initialize as None (This will store graph.edges dict)
-        self.node_utility = None # Initialize as None
-        self.guidepost = None # Initialize as None
+        self.node_coords = None
+        self.local_map_graph = None # This will store graph.edges dict
+        self.node_utility = None
+        self.guidepost = None
         self.planned_path = []
         self.target_pos = None
         self.movement_history = [start_position.copy()]
         self.graph_generator:Graph_generator = Graph_generator(map_size=real_map_size, sensor_range=self.sensor_range, k_size=k_size, plot=plot)
-        self.graph_generator.route_node.append(start_position)
+        if start_position is not None:
+             self.graph_generator.route_node.append(start_position)
 
         self.target_gived_by_server = False
         self.last_position_in_server_range = start_position
@@ -43,7 +41,7 @@ class Robot():
         self.current_info_gain = 0
         self.last_explored_area = 0
 
-        self.graph_update_counter = 0 # Re-added counter
+        self.graph_update_counter = 0
 
         self.robot_id = -1
         self.is_returning = False
@@ -66,14 +64,73 @@ class Robot():
              self.is_returning = False; self.return_replan_attempts = 0; self.return_fail_cooldown = 0
              logger.debug(f"Robot {self.robot_id} re-entered server range. State reset.")
 
+        # --- 機器人交互 ---
         for other_robot in all_robots:
-             if other_robot is self: continue
-             dist = np.linalg.norm(self.position - other_robot.position)
-             if dist < ROBOT_COMM_RANGE:
-                 merged = merge_maps_func([self.local_map, other_robot.local_map])
-                 self.local_map[:] = merged; other_robot.local_map[:] = merged
-                 if not self.is_in_server_range: self.planned_path = []
+            if other_robot is self: continue
+            
+            dist = np.linalg.norm(self.position - other_robot.position)
+            
+            if dist < ROBOT_COMM_RANGE:
+                # 1. Standard Map Merge
+                merged = merge_maps_func([self.local_map, other_robot.local_map])
+                self.local_map[:] = merged
+                other_robot.local_map[:] = merged
+                
+                # --- 2. 修改點：機會主義任務交接 (Task Handoff Logic) ---
+                
+                # Case 1: 我 (self) 正在返回 (A)，遇到 剛出發的 B (other_robot)
+                i_am_returning = self.is_returning
+                other_has_server_task = other_robot.target_gived_by_server and not other_robot.is_returning
+                
+                # Case 2: 我 (self) 剛出發 (B)，遇到 正在返回的 A (other_robot)
+                i_have_server_task = self.target_gived_by_server and not self.is_returning
+                other_is_returning = other_robot.is_returning
+                
+                if i_am_returning and other_has_server_task:
+                    logger.info(f"[R{self.robot_id} Handoff] I am returning, taking task from R{other_robot.robot_id}. R{other_robot.robot_id} is now returning.")
+                    
+                    # 我 (A) 接收 B 的任務
+                    self.target_pos = other_robot.target_pos
+                    self.planned_path = other_robot.planned_path
+                    self.target_gived_by_server = True # 標記為伺服器任務
+                    self.is_returning = False; self.return_replan_attempts = 0; self.return_fail_cooldown = 0
+                    
+                    # B 接收我的返回任務 (作為數據中繼)
+                    other_robot.target_pos = self.last_position_in_server_range # B 的新目標是伺服器
+                    other_robot.planned_path = [] # 強制 B 在下一步重新規劃返回路徑
+                    other_robot.is_returning = True # B 現在是返回狀態
+                    other_robot.target_gived_by_server = False # B 不再是執行伺服器任務
+                    other_robot.return_replan_attempts = 0 # 重置 B 的計數器
 
+                elif i_have_server_task and other_is_returning:
+                    logger.info(f"[R{self.robot_id} Handoff] I am departing, giving task to R{other_robot.robot_id}. I am now returning.")
+                    
+                    # 儲存我 (B) 的原始任務
+                    my_original_target = self.target_pos
+                    my_original_path = self.planned_path
+                    
+                    # 我 (B) 接收 A 的返回任務
+                    self.target_pos = other_robot.last_position_in_server_range
+                    self.planned_path = [] # 強制我重新規劃返回路徑
+                    self.is_returning = True
+                    self.target_gived_by_server = False
+                    self.return_replan_attempts = 0
+                    
+                    # A 接收我 (B) 的原始任務
+                    other_robot.target_pos = my_original_target
+                    other_robot.planned_path = my_original_path
+                    other_robot.target_gived_by_server = True
+                    other_robot.is_returning = False; other_robot.return_replan_attempts = 0; other_robot.return_fail_cooldown = 0
+
+                # Case 3: 其他情況 (例如兩個自主探索者相遇)
+                elif not self.is_in_server_range and not self.is_returning and not self.target_gived_by_server:
+                     # 雙方都清空路徑，以便基於合併後的新地圖重新決策
+                     self.planned_path = []
+                
+                # (如果 other_robot 也是 Case 3，它自己的 update_local_awareness 會清空它的路徑)
+                # --- 任務交接結束 ---
+
+        # --- 1c. 與伺服器同步 (在交互之後) ---
         if self.is_in_server_range:
              merged = merge_maps_func([self.local_map, server.global_map])
              self.local_map[:] = merged; server.global_map[:] = merged
@@ -84,7 +141,9 @@ class Robot():
              self.out_range_step = 0
              if not self.target_gived_by_server: self.planned_path = []
         else:
-            if not self.target_gived_by_server: self.out_range_step += 1
+            # <--- 修正: 只有在非伺服器任務且非返回時才計數 ---
+            if not self.target_gived_by_server and not self.is_returning:
+                 self.out_range_step += 1
             if 0 <= self.robot_id < len(server.robot_in_range):
                 server.robot_in_range[self.robot_id] = False
 
@@ -101,7 +160,7 @@ class Robot():
         self.downsampled_map = block_reduce(self.local_map.copy(), block_size=(self.resolution, self.resolution), func=np.min)
         new_frontiers = find_frontier_func(self.downsampled_map)
 
-        # --- 4. 更新節點圖 (恢復間歇) ---
+        # --- 4. 更新節點圖 (間歇性) ---
         self.graph_update_counter += 1
         if self.graph_update_counter % GRAPH_UPDATE_INTERVAL == 0:
             logger.debug(f"[R{self.robot_id} Awareness] Rebuilding graph structure...")
@@ -110,7 +169,7 @@ class Robot():
                     self.local_map, new_frontiers, self.frontiers, self.position
                 )
                 self.node_coords = node_coords
-                self.local_map_graph = graph_edges # 儲存 graph.edges
+                self.local_map_graph = graph_edges
                 self.node_utility = node_utility
                 self.guidepost = guidepost
             except Exception as e:
@@ -123,11 +182,8 @@ class Robot():
                 )
                 self.node_utility = node_utility
                 self.guidepost = guidepost
-                # --- 同步 local_map_graph ---
-                # 即使只更新 utility，也要確保 local_map_graph 指向最新的 graph_generator.graph.edges
                 if hasattr(self.graph_generator, 'graph') and hasattr(self.graph_generator.graph, 'edges'):
                      self.local_map_graph = self.graph_generator.graph.edges
-                # --- ---
             except Exception as e:
                  logger.error(f"Robot {self.robot_id} failed update_node_utilities: {e}", exc_info=True)
 
@@ -185,12 +241,12 @@ class Robot():
             else:
                  logger.warning(f"[R{self.robot_id} Decide] Wanted return ({'Criteria' if should_return_criteria else 'TooFar'}), but path failed. Trigger cooldown & local.")
                  self.return_fail_cooldown = RETURN_FAIL_COOLDOWN_STEPS; target_pos = target_pos_local
-                 self.planned_path = self._plan_local_path(target_pos)
+                 self.planned_path = self._plan_local_path(self.target_pos)
                  if not self.planned_path: self.planned_path = [self.position]
                  self.is_returning = False; decision_reason = "Local (Return Failed)"
         else:
             target_pos = target_pos_local; self.is_returning = False; self.return_fail_cooldown = 0
-            self.planned_path = self._plan_local_path(target_pos)
+            self.planned_path = self._plan_local_path(self.target_pos)
             if not self.planned_path: self.planned_path = [self.position]
             decision_reason = "Local Explore"
         self.target_pos = target_pos; self.target_gived_by_server = False
@@ -278,29 +334,22 @@ class Robot():
         return selected_coord, original_idx, min_valid_dists
 
     def _plan_local_path(self, target, avoid_pos=None):
-        """
-        回傳本地路徑 (使用 logger)。
-        """
         gen = self.graph_generator; current = self.position
         if avoid_pos is not None: pass
-        # <--- 修改點：讀取 Robot 自身的 node_coords 和 local_map_graph ---
         coords = self.node_coords
         graph_edges = self.local_map_graph # 這是 dict
-        # --- ---
 
         if coords is None or len(coords) == 0 or graph_edges is None or not isinstance(graph_edges, dict):
              logger.warning(f"[R{self.robot_id} PlanLocal] Invalid graph/nodes for target {target}. Coords:{coords is not None}, Graph:{graph_edges is not None}")
              return [current]
 
-        # --- 將 graph_edges (dict) 轉換為 Graph 物件 ---
         graph_obj = Graph()
         if coords is not None:
-             # <--- 修正: 確保 coords 是可迭代的 ---
              try:
                  for node_coord in coords: graph_obj.add_node(tuple(node_coord))
              except TypeError:
-                  logger.error(f"[R{self.robot_id} PlanLocal] Coords are not iterable? Type: {type(coords)}")
-                  return [current] # 無法處理，返回
+                  logger.error(f"[R{self.robot_id} PlanLocal] Coords not iterable? Type: {type(coords)}")
+                  return [current]
         if isinstance(graph_edges, dict):
              for from_node_tuple, edges_dict in graph_edges.items():
                  if from_node_tuple not in graph_obj.nodes: graph_obj.add_node(from_node_tuple)
@@ -309,9 +358,8 @@ class Robot():
                           if to_node_tuple not in graph_obj.nodes: graph_obj.add_node(to_node_tuple)
                           if isinstance(edge_obj, Edge): graph_obj.add_edge(from_node_tuple, to_node_tuple, edge_obj.length)
                           else: logger.warning(f"Unexpected edge type: {type(edge_obj)}")
-        # --- ---
 
-        dist, route = gen.find_shortest_path(current, target, coords, graph_obj) # 使用 graph_obj
+        dist, route = gen.find_shortest_path(current, target, coords, graph_obj)
         path_len = len(route) if route is not None else 0
         logger.debug(f"[R{self.robot_id} PlanLocal] Target:{target}. A* Result:{'Success' if route is not None else 'Failed!'}, Dist:{dist:.1f}, PathLen:{path_len}")
         if route is None or dist >= 1e5: return [current]
