@@ -237,8 +237,8 @@ class Env():
                     ax.plot(robot.position[0], robot.position[1], markersize=6, zorder=999, marker="D", ls="-", c=robot_marker_color, mec="black")
                     ax_real.plot(robot.position[0], robot.position[1], markersize=6, zorder=999, marker="D", ls="-", c=robot_marker_color, mec="black")
                     if i < len(self.server.all_robot_position) and self.server.all_robot_position[i] is not None:
-                         show_alpha = 1.0 if i < len(self.server.robot_in_range) and self.server.robot_in_range[i] else 0.3
-                         ax_env.plot(self.server.all_robot_position[i][0], self.server.all_robot_position[i][1], markersize=6, zorder=999, marker="D", ls="-", c=robot_marker_color, mec="black", alpha=show_alpha)
+                        show_alpha = 1.0 if i < len(self.server.robot_in_range) and self.server.robot_in_range[i] else 0.3
+                        ax_env.plot(self.server.all_robot_position[i][0], self.server.all_robot_position[i][1], markersize=6, zorder=999, marker="D", ls="-", c=robot_marker_color, mec="black", alpha=show_alpha)
                     circle_comm = patches.Circle(robot.position, ROBOT_COMM_RANGE, color=robot_marker_color, alpha=0.05)
                     ax_real.add_patch(circle_comm)
                 ax.imshow(robot.local_map, cmap='gray')
@@ -248,15 +248,15 @@ class Env():
                 if hasattr(robot, 'movement_history') and len(robot.movement_history) > 1:
                     history = np.array(robot.movement_history); ax_real.plot(history[:,0], history[:,1], '-', linewidth=1, alpha=0.6, color=robot_marker_color)
                 if robot.target_pos is not None and robot.planned_path and len(robot.planned_path) >= 1:
-                     try:
-                         planned_path_with_current = [robot.position.copy()] + robot.planned_path
-                         path = np.array(planned_path_with_current)
-                         ax.plot(path[:,0], path[:,1], 'k--', linewidth=1, zorder=4)
-                         ax.plot(robot.target_pos[0], robot.target_pos[1], markersize=6, zorder=999, marker="x", ls="-", c='black', mec="black")
-                     except Exception as plot_err: pass
+                    try:
+                        planned_path_with_current = [robot.position.copy()] + robot.planned_path
+                        path = np.array(planned_path_with_current)
+                        ax.plot(path[:,0], path[:,1], 'k--', linewidth=1, zorder=4)
+                        ax.plot(robot.target_pos[0], robot.target_pos[1], markersize=6, zorder=999, marker="x", ls="-", c='black', mec="black")
+                    except Exception as plot_err: pass
             except IndexError:
-                 logger.error(f"Error subplot w/o window R{i} @ ({row},{col}), total_rows={total_rows}. Skip.")
-                 continue
+                logger.error(f"Error subplot w/o window R{i} @ ({row},{col}), total_rows={total_rows}. Skip.")
+                continue
 
         plt.tight_layout()
         self._save_frame_to_memory() # 這裡總是儲存

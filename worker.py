@@ -24,15 +24,15 @@ class Worker:
         self.save_video = save_video
         for i, robot in enumerate(self.env.robot_list):
             if not hasattr(robot, 'node_coords') or robot.node_coords is None or len(robot.node_coords) == 0:
-                 logger.warning(f"Robot {i} has no node_coords at init.")
+                logger.warning(f"Robot {i} has no node_coords at init.")
             else:
-                 iter_idx = min(i, len(robot.node_coords)-1 )
-                 robot_position = robot.node_coords[iter_idx]
-                 robot.position = robot_position
-                 if not hasattr(robot, 'movement_history') or not robot.movement_history:
-                     robot.movement_history = [robot.position.copy()]
-                 elif not np.array_equal(robot.position, robot.movement_history[-1]):
-                      robot.movement_history.append(robot.position.copy())
+                iter_idx = min(i, len(robot.node_coords)-1 )
+                robot_position = robot.node_coords[iter_idx]
+                robot.position = robot_position
+                if not hasattr(robot, 'movement_history') or not robot.movement_history:
+                    robot.movement_history = [robot.position.copy()]
+                elif not np.array_equal(robot.position, robot.movement_history[-1]):
+                    robot.movement_history.append(robot.position.copy())
 
     def run_episode(self, curr_episode=0):
         # <--- 修改點：恢復 PLOT_INTERVAL ---
@@ -53,10 +53,10 @@ class Worker:
                             robot.decide_next_target(self.env.robot_list)
                     robot.move_one_step(self.env.robot_list)
                 except Exception as e:
-                     logger.error(f"Error in Robot {i} step {step}: {e}", exc_info=True)
+                    logger.error(f"Error in Robot {i} step {step}: {e}", exc_info=True)
                 num_targets = 0
                 if hasattr(robot.graph_generator, 'target_candidates') and robot.graph_generator.target_candidates is not None:
-                     num_targets = len(robot.graph_generator.target_candidates)
+                    num_targets = len(robot.graph_generator.target_candidates)
                 msg_cnt += f"| R{i} targets: {num_targets} "
 
             # ... (階段二：伺服器集中調度) ...
@@ -65,9 +65,9 @@ class Worker:
                     self.env.robot_list, self.env.real_map, self.env.find_frontier
                 )
             except Exception as e:
-                 logger.error(f"Error in Server step {step}: {e}", exc_info=True)
-                 done = False
-                 coverage = self.env.calculate_coverage_ratio() # 使用 env 的方法
+                logger.error(f"Error in Server step {step}: {e}", exc_info=True)
+                done = False
+                coverage = self.env.calculate_coverage_ratio() # 使用 env 的方法
 
             # <--- 修改點：新的繪圖/儲存邏輯 ---
             # === 階段三：繪圖與日誌 ===
@@ -85,7 +85,7 @@ class Worker:
                     self.env.plot_env_without_window(step)
 
             except Exception as e:
-                 logger.error(f"Error plotting/saving frame at step {step}: {e}", exc_info=True)
+                logger.error(f"Error plotting/saving frame at step {step}: {e}", exc_info=True)
             # --- ---
 
             msg = f"\rEP: {curr_episode} | Step {step:5d} | Coverage: {coverage * 100:6.2f}% "
