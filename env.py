@@ -1,4 +1,4 @@
-from skimage import io
+import skimage.io as skimage_io
 import os
 from skimage.measure import block_reduce
 import numpy as np
@@ -6,6 +6,8 @@ import matplotlib.pylab as plt
 import matplotlib.patches as patches
 import logging
 import sys
+import cv2, tempfile, io
+from PIL import Image
 
 from robot import Robot
 from server import Server
@@ -81,6 +83,20 @@ class Env():
         merged = self.merge_maps(maps_to_merge)
         for robot in self.robot_list: robot.local_map[:] = merged
         self.server.global_map[:] = merged
+
+        # 新增：影片串流與緩衝設定（避免 frames_data 無限增長）
+        # 若系統有 cv2 則預設啟用串流（更省記憶體）
+        try:
+            import cv2  # 檢查是否可用
+            self._video_streaming_available = True
+        except Exception:
+            self._video_streaming_available = False
+
+        self._video_writer = None            # cv2.VideoWriter 物件（若串流）
+        self._video_tmp_path = None          # 臨時影片檔路徑（串流時使用）
+        self._frames_buffer_max = 300        # 若無 cv2，最多保留多少幀（可調）
+        self.frames_data = []                # 緩衝（可能為 numpy 或 bytes，視情況而定）
+        self._frames_compressed = True       # 在緩衝模式下儲存壓縮 bytes 可降低記憶體
 
         try:
             if self.robot_list:
@@ -161,7 +177,7 @@ class Env():
             tuple: (final_map (ndarray), start_location (ndarray))
         """
         try:
-            map_img_gray = io.imread(map_path, as_gray=True)
+            map_img_gray = skimage_io.imread(map_path, as_gray=True)
             if map_img_gray.dtype == float: map_img_int = (map_img_gray * 255).astype(np.uint8)
             else: map_img_int = map_img_gray.astype(np.uint8)
             start_points = np.where(map_img_int == 208); start_location = None
@@ -331,51 +347,108 @@ class Env():
         self._save_frame_to_memory() # 這裡總是儲存
 
     def _save_frame_to_memory(self):
-        """將目前 matplotlib 圖形儲存為影像並存入記憶緩衝區 frames_data。
+        """將當前圖形保存到記憶體或直接寫入影片（減少記憶體佔用）。"""
+        import io
+        from PIL import Image
 
-        Args:
-            無（使用物件屬性 self.fig 與 plt 的當前狀態）。
-
-        Returns:
-            None
-
-        Raises:
-            例外會被捕捉並記錄於 logger，但不會向外拋出。
-        """
-        # ... (保持不變) ...
-        import io; from PIL import Image
-        if not hasattr(self, 'frames_data'): self.frames_data = []
+        # 取得目前畫布為 PIL Image
         buf = io.BytesIO()
         plt.savefig(buf, format='png', dpi=100, bbox_inches='tight')
         buf.seek(0)
-        try: image = Image.open(buf); self.frames_data.append(np.array(image))
-        except Exception as e: logger.error(f"Save frame error: {e}")
-        finally: buf.close()
+        try:
+            image = Image.open(buf).convert("RGB")
+            frame = np.array(image)  # RGB ndarray (H,W,3)
+        except Exception as e:
+            buf.close()
+            logger.error(f"_save_frame_to_memory: failed to capture frame: {e}")
+            return
+        finally:
+            buf.close()
 
+        # 若支援 OpenCV 且啟用串流 -> 直接寫入 VideoWriter（不保留於記憶體）
+        if getattr(self, '_video_streaming_available', False):
+            try:
+                import cv2
+                # 初始化 video writer（第一次寫入時）
+                if self._video_writer is None:
+                    # 建臨時檔案
+                    import tempfile
+                    tmp = tempfile.NamedTemporaryFile(prefix="hybrid_vid_", suffix=".mp4", delete=False)
+                    self._video_tmp_path = tmp.name
+                    tmp.close()
+                    height, width = frame.shape[:2]
+                    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                    # 使用 5 fps 預設（可改）
+                    self._video_writer = cv2.VideoWriter(self._video_tmp_path, fourcc, 5, (width, height))
+                    if not self._video_writer.isOpened():
+                        logger.error("_save_frame_to_memory: Failed to open VideoWriter, falling back to buffer.")
+                        self._video_writer = None
+                if self._video_writer is not None:
+                    # OpenCV 需 BGR
+                    frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                    self._video_writer.write(frame_bgr)
+                    return
+            except Exception as e:
+                logger.warning(f"_save_frame_to_memory: video streaming failed, fallback to buffer: {e}")
+                # 若串流失敗則退回到緩衝模式
+
+        # 緩衝模式：儲存壓縮 JPEG bytes（比 numpy 陣列小），並限制緩衝大小
+        try:
+            from PIL import Image
+            buf2 = io.BytesIO()
+            image.save(buf2, format='JPEG', quality=70)  # 壓縮品質可調
+            buf2.seek(0)
+            img_bytes = buf2.read()
+            buf2.close()
+            self.frames_data.append(img_bytes)
+            # 若超過上限，丟棄最舊的幀
+            if len(self.frames_data) > self._frames_buffer_max:
+                # 保留最新 N 幀
+                excess = len(self.frames_data) - self._frames_buffer_max
+                del self.frames_data[0:excess]
+        except Exception as e:
+            logger.error(f"_save_frame_to_memory: failed to compress/store frame: {e}")
 
     def save_video(self, filename="exploration_video.mp4", fps=5):
-        """將先前儲存於 frames_data 的影格匯出成影片檔案。
+        """將所有幀匯出為影片。若使用串流已在臨時檔產生影片，則關閉並搬移檔案；否則由緩衝產生影片。"""
+        # 若正在以 VideoWriter 串流
+        if getattr(self, '_video_writer', None) is not None:
+            try:
+                import cv2, shutil
+                self._video_writer.release()
+                self._video_writer = None
+                # 將臨時檔案移動到目標位置
+                if self._video_tmp_path is not None:
+                    shutil.move(self._video_tmp_path, filename)
+                    logger.info(f"Saved streamed video to {filename}")
+                    self._video_tmp_path = None
+                    return
+            except Exception as e:
+                logger.error(f"save_video: failed to finalize streamed video: {e}", exc_info=True)
+                # 若失敗則嘗試使用緩衝（如果有）
+        # 若沒有串流影片，使用緩衝 frames_data 產生影片
+        if not hasattr(self, 'frames_data') or not self.frames_data:
+            logger.warning("No frames to save")
+            return
 
-        Args:
-            filename (str): 輸出影片檔名（含路徑）。
-            fps (int|float): 每秒影格數。
-
-        Returns:
-            None
-
-        Raises:
-            任何檔案寫入或 OpenCV 錯誤會被捕捉並記錄於 logger，不會向外拋出。
-        """
-        # ... (保持不變) ...
-        if not hasattr(self, 'frames_data') or not self.frames_data: logger.warning("No frames captured."); return
-        import cv2
-        height, width = self.frames_data[0].shape[:2]
+        # 建立一個暫存的影像檔列表並用 OpenCV 寫入影片
         try:
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v'); video_writer = cv2.VideoWriter(filename, fourcc, fps, (width, height))
-            if not video_writer.isOpened(): logger.error(f"Failed to open {filename}"); return
-            for frame in self.frames_data:
-                frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR) if len(frame.shape) == 3 else frame
+            # 先將 bytes 重建為 numpy frames 並取得尺寸
+            first_img = Image.open(io.BytesIO(self.frames_data[0])).convert("RGB")
+            height, width = np.array(first_img).shape[:2]
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            video_writer = cv2.VideoWriter(filename, fourcc, fps, (width, height))
+            if not video_writer.isOpened():
+                logger.error(f"save_video: Failed to open VideoWriter for {filename}")
+                return
+            for img_bytes in self.frames_data:
+                arr = np.array(Image.open(io.BytesIO(img_bytes)).convert("RGB"))
+                frame_bgr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
                 video_writer.write(frame_bgr)
-            video_writer.release(); logger.info(f"Video saved: {filename}")
-        except Exception as e: logger.error(f"Error saving video {filename}: {e}", exc_info=True)
-        finally: self.frames_data = []
+            video_writer.release()
+            logger.info(f"Video saved as {filename}")
+        except Exception as e:
+            logger.error(f"save_video: failed to write buffered frames: {e}", exc_info=True)
+        finally:
+            # 無論成功或失敗都釋放緩衝
+            self.frames_data = []
