@@ -1,6 +1,7 @@
 import time
 import random
 import numpy as np
+import pandas as pd
 import matplotlib
 matplotlib.use('Agg')  # 若不想跳出視窗，使用無GUI後端
 import matplotlib.pyplot as plt
@@ -24,8 +25,6 @@ def run_batch(n_runs=100, map_max_index=1000, agent_min=3, agent_max=5, seed=Non
     t0 = time.perf_counter()
 
     for i in range(n_runs):
-        if (i)%2:
-            continue
         agent_num = random.randint(agent_min, agent_max)  # 3~5（含上下界）
         map_index = random.randint(0, map_max_index)   # 0~1000（含上下界）
         map_index = i+1  # 固定測試用
