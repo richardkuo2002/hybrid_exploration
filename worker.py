@@ -15,6 +15,18 @@ logger = logging.getLogger(__name__)
 
 class Worker:
     def __init__(self, global_step=0, agent_num=3, map_index=0, plot=False, save_video=True):
+        """建立 Worker 實例，初始化環境與機器人位置。
+
+        Args:
+            global_step (int): 全域步數初始值。
+            agent_num (int): 機器人數量。
+            map_index (int): 要使用的地圖索引。
+            plot (bool): 是否啟用即時繪圖。
+            save_video (bool): 是否儲存模擬影片。
+
+        Returns:
+            None
+        """
         self.global_step = global_step
         self.agent_num = agent_num
         self.k_size = K_SIZE
@@ -35,6 +47,16 @@ class Worker:
                     robot.movement_history.append(robot.position.copy())
 
     def run_episode(self, curr_episode=0):
+        """執行一個 episode 的主迴圈。
+
+        Args:
+            curr_episode (int): 當前 episode 編號。
+
+        Returns:
+            tuple:
+                success (bool): 是否完成探索 (True=完成)。
+                step (int): 結束時的步數或 timeout 步數。
+        """
         # <--- 修改點：恢復 PLOT_INTERVAL ---
         PLOT_INTERVAL = 5
         output_dir = "videos"

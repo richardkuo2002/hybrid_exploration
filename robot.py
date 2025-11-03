@@ -13,6 +13,18 @@ logger = logging.getLogger(__name__)
 
 class Robot():
     def __init__(self, start_position, real_map_size, resolution, k_size, plot=False): # Removed debug
+        """初始化 Robot。
+
+        Args:
+            start_position (array-like[2]): 機器人起始位置。
+            real_map_size (tuple): 地圖大小 (height, width)。
+            resolution (int): 下採樣比例。
+            k_size (int): Graph generator 的 k。
+            plot (bool): 是否啟用繪圖。
+
+        Returns:
+            None
+        """
         self.position = start_position
         self.local_map = np.ones(real_map_size) * 127
         self.downsampled_map = None
@@ -51,8 +63,17 @@ class Robot():
 
 
     def update_local_awareness(self, real_map, all_robots, server, find_frontier_func, merge_maps_func):
-        """
-        執行一步的感知和地圖更新。
+        """執行感知、地圖合併、機器人交互與節點/效用更新（一步）。
+
+        Args:
+            real_map (ndarray): 真實地圖 (y,x)。
+            all_robots (list[Robot]): 所有機器人清單。
+            server (Server): 伺服器物件。
+            find_frontier_func (callable): 用於尋找 frontier 的函式。
+            merge_maps_func (callable): 用於合併地圖的函式。
+
+        Returns:
+            None
         """
         # --- 1. 感測與地圖合併 ---
         self.local_map = sensor_work(self.position, self.sensor_range, self.local_map, real_map)
@@ -191,9 +212,18 @@ class Robot():
 
     # ... (needs_new_target, decide_next_target, move_one_step, _select_node 保持不變) ...
     def needs_new_target(self):
+         """檢查是否需要新目標（路徑為空）。Returns bool。"""
          return len(self.planned_path) < 1
 
     def decide_next_target(self, all_robots):
+        """決策下一個目標（含返回、冷卻、重新規劃邏輯）。
+
+        Args:
+            all_robots (list[Robot]): 其他機器人清單。
+
+        Returns:
+            None
+        """
         MAX_RETURN_REPLAN_ATTEMPTS = 2
         RETURN_FAIL_COOLDOWN_STEPS = 10
         logger.debug(f"[R{self.robot_id} Decide] Pos:{self.position}, InRange:{self.is_in_server_range}, OutSteps:{self.out_range_step}, Return:{self.is_returning}, Cooldown:{self.return_fail_cooldown}")
@@ -254,6 +284,14 @@ class Robot():
         logger.debug(f"[R{self.robot_id} Decide] Final Target: {self.target_pos}, Reason: {decision_reason}, PathLen: {path_len}")
 
     def move_one_step(self, all_robots):
+        """執行單步移動：檢查阻擋、退讓、重新規劃或前進。
+
+        Args:
+            all_robots (list[Robot]): 其他機器人清單。
+
+        Returns:
+            None
+        """
         logger.debug(f"[R{self.robot_id} Move] Pos:{self.position}, Target:{self.target_pos}, Return:{self.is_returning}, PathLen:{len(self.planned_path)}")
         if len(self.planned_path) < 1: logger.debug(f"[R{self.robot_id} Move] No path."); return
         next_step = self.planned_path[0]
@@ -306,6 +344,14 @@ class Robot():
         else: self.is_in_server_range = False
 
     def _select_node(self, all_robots):
+        """選擇最佳 local 候選節點。
+
+        Args:
+            all_robots (list[Robot]): 其他機器人清單。
+
+        Returns:
+            tuple: (selected_coord (ndarray), original_idx (int), min_valid_dists (float))
+        """
         if not hasattr(self.graph_generator, 'target_candidates') or self.graph_generator.target_candidates is None:
              logger.debug(f"[R{self.robot_id} SelectNode] graph_generator.target_candidates is None!"); return self.position, 0, 0
         candidates = self.graph_generator.target_candidates; num_candidates = len(candidates)
@@ -334,6 +380,15 @@ class Robot():
         return selected_coord, original_idx, min_valid_dists
 
     def _plan_local_path(self, target, avoid_pos=None):
+        """使用本地圖(graph)計算到 target 的路徑，若失敗回傳 [current]。
+
+        Args:
+            target (array-like[2]): 目標座標。
+            avoid_pos (array-like[2], optional): 要避免的位置（可為 None）。
+
+        Returns:
+            list: 路徑座標列表（至少包含 current position）。
+        """
         gen = self.graph_generator; current = self.position
         if avoid_pos is not None: pass
         coords = self.node_coords

@@ -17,6 +17,17 @@ logger = logging.getLogger(__name__)
 
 class Env():
     def __init__(self, n_agent:int, k_size=20, map_index=0, plot=True):
+        """初始化環境 (讀取地圖、建立伺服器與機器人)。
+
+        Args:
+            n_agent (int): 機器人數量。
+            k_size (int): graph generator 的 k。
+            map_index (int): 選擇地圖的索引。
+            plot (bool): 是否啟用繪圖。
+
+        Returns:
+            None
+        """
         self.resolution = 4
         self.map_path = "DungeonMaps/train/easy"
         self.map_list = os.listdir(self.map_path)
@@ -80,9 +91,22 @@ class Env():
 
     # ... (calculate_coverage_ratio, merge_maps, update_robot_local_map, find_frontier 不變) ...
     def calculate_coverage_ratio(self):
+        """計算目前覆蓋率（使用 server.global_map 與真實地圖）。
+
+        Returns:
+            float: 覆蓋率 (0-1)。
+        """
         explored_pixels = np.sum(self.server.global_map == 255); total_free_pixels = np.sum(self.real_map == 255)
         return min(explored_pixels / total_free_pixels, 1.0) if total_free_pixels > 0 else 0.0
     def merge_maps(self, maps_to_merge):
+        """合併多張信念地圖，優先考慮障礙與可通行。
+
+        Args:
+            maps_to_merge (list[ndarray]): 要合併的地圖清單。
+
+        Returns:
+            ndarray: 合併後的地圖。
+        """
         merged_map = np.ones_like(self.real_map) * 127
         valid_maps = [m for m in maps_to_merge if isinstance(m, np.ndarray)]
         if not valid_maps: return merged_map
@@ -90,11 +114,30 @@ class Env():
             merged_map[belief == 1] = 1; merged_map[belief == 255] = 255
         return merged_map
     def update_robot_local_map(self, robot_position, sensor_range, robot_local_map, real_map):
+        """呼叫 sensor_work 更新機器人的 local map。
+
+        Args:
+            robot_position (array-like[2]): 機器人位置。
+            sensor_range (int): 感測半徑。
+            robot_local_map (ndarray): 當前 local map。
+            real_map (ndarray): 真實地圖。
+
+        Returns:
+            ndarray: 更新後的 local map（若發生例外則回傳原本的 local_map）。
+        """
         try:
              updated_map = sensor_work(robot_position, sensor_range, robot_local_map, real_map)
              return updated_map if isinstance(updated_map, np.ndarray) else robot_local_map
         except Exception as e: logger.error(f"Error sensor_work @ {robot_position}: {e}", exc_info=True); return robot_local_map
     def find_frontier(self, downsampled_map):
+        """找出 downsampled_map 的 frontier 點。
+
+        Args:
+            downsampled_map (ndarray): 下採樣後的地圖陣列。
+
+        Returns:
+            ndarray: frontier 座標陣列 (N,2)，若沒有則為空陣列。
+        """
         try:
             if downsampled_map is None or downsampled_map.ndim != 2: return np.array([]).reshape(0, 2)
             y_len, x_len = downsampled_map.shape[:2]; mapping = (downsampled_map == 127).astype(np.int8)
@@ -109,6 +152,14 @@ class Env():
         except Exception as e: logger.error(f"Error find_frontier: {e}", exc_info=True); return np.array([]).reshape(0, 2)
 
     def import_map_revised(self, map_path):
+        """讀取地圖檔案並回傳轉換後的地圖與起始點座標。
+
+        Args:
+            map_path (str): 地圖檔案路徑。
+
+        Returns:
+            tuple: (final_map (ndarray), start_location (ndarray))
+        """
         try:
             map_img_gray = io.imread(map_path, as_gray=True)
             if map_img_gray.dtype == float: map_img_int = (map_img_gray * 255).astype(np.uint8)
@@ -135,6 +186,7 @@ class Env():
 
 
     def _get_plot_layout(self):
+        """計算繪圖格局 (內部)。Returns total_rows, total_cols, robot_row_start。"""
         n_maps = self.n_agent; base_rows_fixed = 4
         rows_for_maps = 0 if n_maps == 0 else ((n_maps - 1) // 2 + 1)
         total_rows = base_rows_fixed + rows_for_maps; total_cols = 2
@@ -143,6 +195,15 @@ class Env():
 
     # <--- 修改點：在 plot_env 加入 save_frame 參數 ---
     def plot_env(self, step, save_frame=False):
+        """繪製環境視覺化，並選擇性將影格存入記憶（供 later saving）。
+
+        Args:
+            step (int): 當前步數。
+            save_frame (bool): 是否將此影格存入內存。
+
+        Returns:
+            None
+        """
         # --- ---
         if not hasattr(self, 'fig') or self.fig is None:
             try: plt.switch_backend('agg'); plt.figure(); plt.close(); plt.switch_backend('tkagg')
@@ -207,7 +268,15 @@ class Env():
         plt.draw(); plt.pause(0.001)
 
     def plot_env_without_window(self, step):
-        # ... (此函式不變，它總是儲存影格) ...
+        """不開視窗直接繪製並儲存影格（always save frame）。
+
+        Args:
+            step (int): 當前步數。
+
+        Returns:
+            None
+        """
+        # ...existing code...
         if not hasattr(self, 'fig') or self.fig is None:
             plt.ioff(); self.fig = plt.figure(figsize=(8, 10))
             if not hasattr(self, 'frames_data'): self.frames_data = []
@@ -262,6 +331,17 @@ class Env():
         self._save_frame_to_memory() # 這裡總是儲存
 
     def _save_frame_to_memory(self):
+        """將目前 matplotlib 圖形儲存為影像並存入記憶緩衝區 frames_data。
+
+        Args:
+            無（使用物件屬性 self.fig 與 plt 的當前狀態）。
+
+        Returns:
+            None
+
+        Raises:
+            例外會被捕捉並記錄於 logger，但不會向外拋出。
+        """
         # ... (保持不變) ...
         import io; from PIL import Image
         if not hasattr(self, 'frames_data'): self.frames_data = []
@@ -274,6 +354,18 @@ class Env():
 
 
     def save_video(self, filename="exploration_video.mp4", fps=5):
+        """將先前儲存於 frames_data 的影格匯出成影片檔案。
+
+        Args:
+            filename (str): 輸出影片檔名（含路徑）。
+            fps (int|float): 每秒影格數。
+
+        Returns:
+            None
+
+        Raises:
+            任何檔案寫入或 OpenCV 錯誤會被捕捉並記錄於 logger，不會向外拋出。
+        """
         # ... (保持不變) ...
         if not hasattr(self, 'frames_data') or not self.frames_data: logger.warning("No frames captured."); return
         import cv2

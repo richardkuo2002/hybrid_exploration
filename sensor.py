@@ -14,7 +14,23 @@ from utils import check_collision # 確保從 utils 匯入的是 JIT 版本
 # 所以 sensor_work 也必須被 JIT 編譯才能高效呼叫。
 @jit(nopython=True) # <--- 2. 加上 JIT 裝飾器
 def sensor_work(robot_position, sensor_range, robot_local_map, real_map):
-    """ Expands explored region on map (JIT Compiled) """
+    """擴展並更新機器人本地地圖（JIT 編譯函式）。
+
+    使用射線掃描（簡化的 Lidar 模型）從 robot_position 朝多個角度掃描，
+    將 real_map 中可見的 free/obstacle 資訊寫入並回傳更新後的 local map。
+
+    Args:
+        robot_position (array-like[2]): 機器人位置 [x, y]（可為浮點或整數）。
+        sensor_range (float|int): 感測半徑（像素單位）。
+        robot_local_map (ndarray): 當前機器人的信念地圖（2D numpy 陣列）。
+        real_map (ndarray): 真實地圖（2D numpy 陣列），用於模擬感測回傳。
+
+    Returns:
+        ndarray: 更新後的 local map 副本（2D numpy 陣列）。
+
+    Raises:
+        本函式為 nopython 模式，內部錯誤通常由 numba 捕捉；上層呼叫可捕捉例外。
+    """
     # 角度增量需要是常數，或者傳入
     sensor_angle_inc = 0.5 / 180 * np.pi
     sensor_angle = 0.0 # 使用浮點數
@@ -53,7 +69,26 @@ def sensor_work(robot_position, sensor_range, robot_local_map, real_map):
 # 但直接修改傳入的 local_map_copy
 @jit(nopython=True)
 def _sensor_collision_check_wrapper(x0_f, y0_f, x1_f, y1_f, real_map, local_map_copy, map_height, map_width, sensor_range):
-    """ Internal JIT helper for line checking, modifies local_map_copy """
+    """內部 JIT 輔助：沿線檢查並在 local_map_copy 上標記可見像素。
+
+    使用整數化後的 Bresenham-like 步進從 (x0,y0) 朝 (x1,y1) 前進，
+    將 real_map 中的 free(255) 或 obstacle(1) 更新到 local_map_copy。
+    遇到障礙或超出 sensor_range 時停止。
+
+    Args:
+        x0_f, y0_f, x1_f, y1_f (float): 起終點座標（浮點，函式內會 round 為整數）。
+        real_map (ndarray): 真實地圖陣列，用於查詢像素值。
+        local_map_copy (ndarray): 要修改並回傳的本地地圖副本。
+        map_height (int): 地圖高度（rows）。
+        map_width (int): 地圖寬度（cols）。
+        sensor_range (float|int): 感測半徑（像素）。
+
+    Returns:
+        ndarray: 修改後的 local_map_copy（回傳同一參考）。
+
+    Raises:
+        無：函式在 nopython 模式下執行，錯誤由上層或 numba 處理。
+    """
     # Numba 需要整數索引
     x0, y0 = int(round(x0_f)), int(round(y0_f))
     x1, y1 = int(round(x1_f)), int(round(y1_f))

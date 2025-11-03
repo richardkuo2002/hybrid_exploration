@@ -17,18 +17,33 @@ class Edge:
         self.to_node = to_node
         self.length = length
 
-
 class Graph:
     def __init__(self):
         self.nodes = set()
         self.edges = dict()
 
     def add_node(self, node):
-        """ Add node to graph """
+        """將節點加入圖中。
+
+        Args:
+            node (hashable): 節點標識（例如 tuple 座標）。
+
+        Returns:
+            None
+        """
         self.nodes.add(node)
 
     def add_edge(self, from_node, to_node, length):
-        """ Add edge to graph """
+        """在圖中加入一條有向邊（若必要會建立 from_node 的 edge dict）。
+
+        Args:
+            from_node (hashable): 起始節點標識。
+            to_node (hashable): 目標節點標識。
+            length (float): 此邊的距離或成本。
+
+        Returns:
+            None
+        """
         edge = Edge(to_node, length)
         if from_node in self.edges:
             from_node_edges = self.edges[from_node]
@@ -39,7 +54,15 @@ class Graph:
         from_node_edges[to_node] = edge
 
     def clear_edge(self, from_node, remove_bidirectional_edges=False):
-        """ Clear edge from graph """
+        """清除指定節點的所有出邊；可選同時移除其他節點指向該節點的邊。
+
+        Args:
+            from_node (hashable): 要清除出邊的節點。
+            remove_bidirectional_edges (bool): 若為 True，同時掃描並移除其他節點指向 from_node 的邊。
+
+        Returns:
+            None
+        """
         if remove_bidirectional_edges:
             for to_node in list(self.edges.keys()):
                 if from_node in self.edges[to_node]:
@@ -49,7 +72,15 @@ class Graph:
             self.edges[from_node] = dict()
 
     def clear_node(self, node, remove_bidirectional_edges=False):
-        """ Clear node from graph """
+        """從圖中移除節點（同時清除其出邊），可選同時移除其他節點指向該節點的邊。
+
+        Args:
+            node (hashable): 要移除的節點。
+            remove_bidirectional_edges (bool): 若為 True，同時移除其他節點指向該節點的邊。
+
+        Returns:
+            None
+        """
         self.clear_edge(node, remove_bidirectional_edges=remove_bidirectional_edges)
 
         # Remove the node from the set of nodes
@@ -58,8 +89,20 @@ class Graph:
 
 
     def is_connected_bfs(self, start_node, criteria=None):
-        """Check if the graph is connected using BFS."""
+        """使用廣度優先搜尋檢查圖的連通性。
 
+        若 criteria 為 None，檢查整個圖是否連通（所有節點皆可到達）。
+        若提供 criteria（節點集合），檢查 criteria 是否均能被從 start_node 到達。
+
+        Args:
+            start_node (hashable): 搜尋起點。
+            criteria (set|None): 若提供，為要檢查是否被覆蓋的節點集合（hashable 元素的集合）。
+
+        Returns:
+            tuple:
+                is_connected (bool): 若符合連通性條件回傳 True，否則 False。
+                visited_list (list): 實際訪問到的節點清單（list）。
+        """
         # An empty graph is considered connected
         if len(self.nodes) == 0:
             return True  
@@ -88,7 +131,15 @@ class Graph:
 
 
 def h(index, destination):
-    """ h function for a-star """
+    """A* 使用的啟發式函式（歐式距離）。
+
+    Args:
+        index (array-like): 當前節點座標或索引。
+        destination (array-like): 目標節點座標或索引。
+
+    Returns:
+        float: 當前節點到目標節點的估計距離（歐式距離）。
+    """
     current = np.array(index)
     end = np.array(destination)
     h = np.linalg.norm(end-current)
@@ -96,7 +147,23 @@ def h(index, destination):
 
 
 def a_star(start, destination, graph:Graph):    
-    """ A-star path planning algorithm """
+    """A* 最短路徑搜尋。
+
+    Args:
+        start (hashable|tuple): 起始節點（與 graph.nodes 的元素型態一致）。
+        destination (hashable|tuple): 目標節點。
+        graph (Graph): 圖物件，需包含 nodes 與 edges 結構。
+
+    Returns:
+        tuple:
+            path (list|None): 若找到路徑回傳節點序列（包含 start 與 destination），否則 None。
+            cost (float): 路徑成本或大數（代表失敗）。
+            closed_list (set): 已展開的節點集合（供分析或視覺化）。
+            edges_explored_list (tuple(list,list)): 展開的邊（來源節點列表, 目標節點列表）。
+
+    Raises:
+        無：函式會在找不到路徑時回傳 None 並以大成本表示失敗。
+    """
     if start == destination:
         return [], 0, set([]), ([],[])
     if tuple(destination) in graph.edges[tuple(start)].keys():

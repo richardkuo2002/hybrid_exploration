@@ -8,7 +8,17 @@ from utils import check_collision
 
 @jit(nopython=True)
 def _initialize_observable_frontiers_jit_internal(coords_param, frontiers_param, robot_map_param, utility_calc_range):
-    """ (Standalone JIT Function) Calculates observable frontier indices. """
+    """計算從 coords 可觀察到的 frontier 索引（JIT 優化）。
+
+    Args:
+        coords_param (array-like[2]): 節點座標。
+        frontiers_param (ndarray): frontier 陣列 (N,2)。
+        robot_map_param (ndarray): 地圖資料 (y,x)。
+        utility_calc_range (float): 可觀察半徑。
+
+    Returns:
+        list: 可觀察到的 frontier 索引列表（整數索引）。
+    """
     observable_indices = [] 
     # 安全檢查 frontiers_param
     if frontiers_param.shape[0] == 0:
@@ -32,7 +42,17 @@ def _initialize_observable_frontiers_jit_internal(coords_param, frontiers_param,
 def _update_observable_frontiers_jit_internal(coords_param, 
                                              new_frontiers_param, robot_map_param,
                                              utility_calc_range):
-    """ (Standalone JIT Function) Calculates newly observable frontier indices from new_frontiers. """
+    """計算從 coords 對 new_frontiers 中新可觀察到的 frontier 索引（JIT 優化）。
+
+    Args:
+        coords_param (array-like[2]): 節點座標。
+        new_frontiers_param (ndarray): 新的 frontier 陣列 (M,2)。
+        robot_map_param (ndarray): 地圖資料 (y,x)。
+        utility_calc_range (float): 可觀察半徑。
+
+    Returns:
+        list: newly added frontier 的索引列表（相對於 new_frontiers_param）。
+    """
     newly_added_indices = [] 
     # 安全檢查 new_frontiers_param
     if new_frontiers_param.shape[0] == 0:
@@ -55,6 +75,16 @@ def _update_observable_frontiers_jit_internal(coords_param,
 
 class Node():
     def __init__(self, coords, frontiers, robot_map):
+        """建立 Node，並初始化可觀察的 frontier 列表與效用。
+
+        Args:
+            coords (array-like[2]): 節點座標。
+            frontiers (ndarray): 當前 frontier 陣列 (N,2)。
+            robot_map (ndarray): 當前機器人觀察到的地圖 (y,x)。
+
+        Returns:
+            None
+        """
         self.coords = coords
         self.observable_frontiers_list = [] 
         self.sensor_range = SENSOR_RANGE 
@@ -69,6 +99,15 @@ class Node():
 
     # Wrapper 函式現在呼叫外部的 JIT 函式
     def _initialize_observable_frontiers_jit(self, frontiers, robot_map):
+        """Wrapper：初始化 observable_frontiers_list。
+
+        Args:
+            frontiers (ndarray): frontier 陣列 (N,2)。
+            robot_map (ndarray): 地圖資料 (y,x)。
+
+        Returns:
+            None
+        """
         if frontiers is None or len(frontiers) == 0:
             self.observable_frontiers_list = []
             return
@@ -81,12 +120,27 @@ class Node():
 
 
     def get_node_utility(self):
+        """計算節點效用（可觀察 frontier 數量）。
+
+        Returns:
+            int: utility 值（整數）。
+        """
         return len(self.observable_frontiers_list)
 
     # <--- 修改點：移除內部的 JIT 函式定義 ---
 
     # Wrapper 函式現在呼叫外部的 JIT 函式
     def update_observable_frontiers(self, observed_frontiers_set, new_frontiers, robot_map):
+        """更新 observable_frontiers（移除已被觀察到的，並加入 new_frontiers 中新可見的）。
+
+        Args:
+            observed_frontiers_set (set): 已被觀察到的 frontier 的 tuple set。
+            new_frontiers (ndarray): 新的 frontier 陣列 (M,2)。
+            robot_map (ndarray): 地圖資料 (y,x)。
+
+        Returns:
+            None
+        """
         if len(observed_frontiers_set) > 0:
             self.observable_frontiers_list = [
                 obs_tuple for obs_tuple in self.observable_frontiers_list 
@@ -120,6 +174,15 @@ class Node():
             self.zero_utility_node = False
 
     def reset_observable_frontiers(self, new_frontiers, robot_map):
+        """用新的 frontier 重置可觀察清單並更新效用。
+
+        Args:
+            new_frontiers (ndarray): 新的 frontier 陣列 (N,2)。
+            robot_map (ndarray): 地圖資料 (y,x)。
+
+        Returns:
+            None
+        """
         self._initialize_observable_frontiers_jit(new_frontiers, robot_map) # Wrapper 不變
         
         self.utility = self.get_node_utility()
@@ -129,11 +192,24 @@ class Node():
             self.zero_utility_node = False
 
     def set_visited(self):
+        """標記節點為已拜訪：清空 observable list 並將效用設為 0。
+
+        Returns:
+            None
+        """
         self.observable_frontiers_list = []
         self.utility = 0
         self.zero_utility_node = True
 
     def frontiers_within_utility_calc_range(self, frontiers):
+        """檢查是否有 frontiers 在預設避免稀疏半徑內（使用 numpy 計算距離）。
+
+        Args:
+            frontiers (ndarray): frontier 陣列 (N,2)。
+
+        Returns:
+            bool: 若存在符合條件的 frontier 回傳 True，否則 False。
+        """
         # (保持不變)
         dist_list = np.linalg.norm(frontiers - self.coords, axis=-1)
         return len(dist_list[dist_list < GLOBAL_NODES_TO_FRONTIER_AVOID_SPARSE_RAD]) > 0

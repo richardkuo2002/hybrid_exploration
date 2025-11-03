@@ -13,6 +13,18 @@ logger = logging.getLogger(__name__)
 
 class Server():
     def __init__(self, start_position, real_map_size, resolution, k_size, plot=False): # removed debug
+        """初始化 Server，管理全域地圖與任務分派狀態。
+
+        Args:
+            start_position (array-like[2]): 伺服器起始位置。
+            real_map_size (tuple): 真實地圖大小 (height, width)。
+            resolution (int): 下採樣比例。
+            k_size (int): Graph generator 使用的 k。
+            plot (bool): 是否啟用繪圖相關功能。
+
+        Returns:
+            None
+        """
         self.position = start_position
         self.global_map = np.ones(real_map_size) * 127
         self.downsampled_map = None
@@ -31,8 +43,17 @@ class Server():
         # self.debug removed
 
     def update_and_assign_tasks(self, robot_list, real_map, find_frontier_func):
-        """
-        執行一步的伺服器決策 (使用 logger)。
+        """伺服器在一步之內更新圖、計算效用並指派任務。
+
+        Args:
+            robot_list (list[Robot]): 所有 Robot 物件清單。
+            real_map (ndarray): 真實地圖 (y,x)。
+            find_frontier_func (callable): 用於尋找 frontier 的函式，接受 downsampled map 並回傳 frontier 陣列。
+
+        Returns:
+            tuple:
+                done (bool): 是否完成探索。
+                coverage (float): 目前覆蓋率 (0.0-1.0)。
         """
         logger.debug(f"[Server Step] Updating graph and assigning tasks...")
 
@@ -189,6 +210,17 @@ class Server():
 
     # ... (_filter_occupied_targets 和 _plan_global_path 保持不變) ...
     def _filter_occupied_targets(self, candidates, utilities, robot_list, requesting_robots):
+        """過濾已被其他機器人佔用或太接近的候選目標。
+
+        Args:
+            candidates (ndarray): 候選目標陣列 (K,2)。
+            utilities (ndarray): 每個候選的效用陣列 (K,)。
+            robot_list (list[Robot]): 所有機器人清單。
+            requesting_robots (list[int]): 正在請求任務的機器人索引。
+
+        Returns:
+            tuple: (filtered_candidates (ndarray), filtered_utilities (ndarray))
+        """
         available_mask = np.ones(len(candidates), dtype=bool); initial_count = len(candidates)
         for i, robot in enumerate(robot_list):
             if i in requesting_robots: continue
@@ -210,6 +242,15 @@ class Server():
         return candidates[available_mask], utilities[available_mask]
 
     def _plan_global_path(self, current_pos, target_pos):
+        """為 robot 計算全域路徑（使用最近一次的節點座標與 graph edges）。
+
+        Args:
+            current_pos (array-like[2]): 機器人當前位置。
+            target_pos (array-like[2]): 目標位置。
+
+        Returns:
+            list: 路徑座標列表（至少包含 current_pos），若失敗則回傳 [current_pos]。
+        """
         gen = self.graph_generator; current = current_pos; target = target_pos
         # <--- 使用 self.node_coords 和 self.local_map_graph ---
         coords = self.node_coords
@@ -247,6 +288,14 @@ class Server():
 
 
     def calculate_coverage_ratio(self, real_map):
+        """計算目前全域地圖的覆蓋率。
+
+        Args:
+            real_map (ndarray): 真實地圖 (y,x)。
+
+        Returns:
+            float: 覆蓋率（0.0 到 1.0）。
+        """
         explored_pixels = np.sum(self.global_map == 255)
         total_free_pixels = np.sum(real_map == 255)
         return min(explored_pixels / total_free_pixels, 1.0) if total_free_pixels > 0 else 0.0

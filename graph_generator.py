@@ -13,6 +13,17 @@ logger = logging.getLogger(__name__)
 
 class Graph_generator:
     def __init__(self, map_size, k_size, sensor_range, plot=False):
+        """初始化 Graph_generator。
+
+        Args:
+            map_size (tuple): 地圖大小 (height, width)。
+            k_size (int): K 個鄰居數。
+            sensor_range (int): 感測半徑。
+            plot (bool): 是否啟用繪圖。
+
+        Returns:
+            None
+        """
         self.k_size = k_size
         self.graph = Graph()
         self.node_coords = None
@@ -33,7 +44,16 @@ class Graph_generator:
     def node_clear(self, coords, remove_bidirectional_edges=False): self.graph.clear_node(tuple(coords), remove_bidirectional_edges=remove_bidirectional_edges)
 
     def generate_graph(self, robot_location, robot_map, frontiers):
-        """ (初始化時呼叫) 建立初始圖 """
+        """建立初始圖結構並回傳 node/edges/utility/guidepost。
+
+        Args:
+            robot_location (array-like[2]): 機器人位置 (x,y)。
+            robot_map (ndarray): 地圖 (y,x)。
+            frontiers (ndarray): frontier 陣列 (N,2)。
+
+        Returns:
+            tuple: (node_coords (ndarray), graph_edges (dict), node_utility (ndarray), guidepost)
+        """
         self.edge_clear_all_nodes()
         free_area = self.free_area(robot_map)
         if len(free_area) == 0: # 如果一開始就沒有自由空間
@@ -62,7 +82,17 @@ class Graph_generator:
         return self.node_coords, self.graph.edges, self.node_utility, self.guidepost
 
     def update_node_utilities(self, robot_map, frontiers, old_frontiers, all_robot_positions=None):
-        """ (輕量級) 僅更新節點效益 """
+        """輕量級更新節點效用（不重建整個圖）。
+
+        Args:
+            robot_map (ndarray): 地圖 (y,x)。
+            frontiers (ndarray): 新的 frontier 陣列 (N,2)。
+            old_frontiers (ndarray): 先前的 frontier 陣列 (M,2)。
+            all_robot_positions (list|None): 其他機器人位置清單或 None。
+
+        Returns:
+            tuple: (node_utility (ndarray), guidepost)
+        """
         logger.debug("Updating node utilities...")
         current_frontiers = frontiers if frontiers is not None else np.array([]).reshape(0, 2)
         current_old_frontiers = old_frontiers if old_frontiers is not None else np.array([]).reshape(0, 2)
@@ -71,7 +101,18 @@ class Graph_generator:
         return self.node_utility, self.guidepost
 
     def rebuild_graph_structure(self, robot_map, frontiers, old_frontiers, position, all_robot_positions=None):
-        """ (昂貴) 重建圖結構和節點效益 """
+        """重建整個圖結構並更新效用（較昂貴）。
+
+        Args:
+            robot_map (ndarray): 地圖 (y,x)。
+            frontiers (ndarray): 新的 frontier 陣列。
+            old_frontiers (ndarray): 舊的 frontier 陣列。
+            position (array-like[2]): 當前位置。
+            all_robot_positions (list|None): 其他機器人位置清單或 None。
+
+        Returns:
+            tuple: (node_coords, graph_edges, node_utility, guidepost)
+        """
         logger.debug("Rebuilding graph structure...")
         # 1. 計算新節點座標
         free_area = self.free_area(robot_map)
@@ -127,8 +168,18 @@ class Graph_generator:
         return self.node_coords, self.graph.edges, self.node_utility, self.guidepost
 
     def _update_nodes_and_utilities(self, frontiers, robot_map, old_frontiers=None, all_robot_positions=None):
-        """ (內部) 更新節點效益 """
-        # ... (安全檢查和邊界變化計算) ...
+        """內部：根據提供的 frontiers 與地圖更新 nodes_list 的 observable/frontier 及 candidates。
+
+        Args:
+            frontiers (ndarray): 當前 frontier 陣列。
+            robot_map (ndarray): 地圖 (y,x)。
+            old_frontiers (ndarray|None): 先前 frontier。
+            all_robot_positions (list|None): 其他機器人位置清單或 None。
+
+        Returns:
+            None
+        """
+        # ...existing code...
         if self.nodes_list is None: self.nodes_list = []
         if frontiers is None: frontiers = np.array([]).reshape(0, 2)
         if old_frontiers is None: old_frontiers = np.array([]).reshape(0, 2)
@@ -181,7 +232,7 @@ class Graph_generator:
              # 不再強制截斷，讓上層處理
 
     def _update_guidepost(self):
-        """ (內部) 更新 guidepost """
+        """更新 guidepost（內部），回傳 None，更新 self.guidepost。"""
         if self.node_coords is not None and len(self.node_coords) > 0:
             self.guidepost = np.zeros((len(self.node_coords), 1))
             for node_pos in self.route_node:
@@ -193,6 +244,17 @@ class Graph_generator:
     # --- find_k_neighbor_all_nodes ---
     # (保持不變)
     def find_shortest_path(self, current, destination, node_coords, graph):
+        """以 Graph 執行 A* 搜尋最短路徑，回傳距離與節點路徑。
+
+        Args:
+            current (array-like[2]): 起點。
+            destination (array-like[2]): 目標點。
+            node_coords (ndarray): 節點座標陣列。
+            graph (Graph): Graph 物件。
+
+        Returns:
+            tuple: (dist (float), route (list|None))；失敗回傳大距離與 None。
+        """
         if node_coords is None or len(node_coords) == 0 or graph is None or not hasattr(graph, 'nodes'):
             logger.warning(f"Invalid input for find_shortest_path. Target:{destination}")
             return 1e5, None
@@ -217,16 +279,38 @@ class Graph_generator:
         return dist, route
 
     def generate_uniform_points(self):
+        """產生均勻格點 (internal helper)。
+
+        Returns:
+            ndarray: 均勻點集合 (M,2)。
+        """
         x = np.linspace(0, self.map_x - 1, NUM_DENSE_COORDS_WIDTH).round().astype(int)
         y = np.linspace(0, self.map_y - 1, NUM_DENSE_COORDS_WIDTH).round().astype(int)
         t1, t2 = np.meshgrid(x, y); points = np.vstack([t1.T.ravel(), t2.T.ravel()]).T
         return points
 
     def free_area(self, robot_map):
+        """回傳地圖中 free pixel 的座標陣列 (x,y)。
+
+        Args:
+            robot_map (ndarray): 地圖 (y,x)。
+
+        Returns:
+            ndarray: free pixels 座標 (N,2)。
+        """
         index = np.where(robot_map == 255); free = np.asarray([index[1], index[0]]).T
         return free
 
     def find_closest_index_from_coords(self, node_coords, p):
+        """在 node_coords 中找到距離 p 最近的索引。
+
+        Args:
+            node_coords (ndarray): 節點陣列。
+            p (array-like[2]): 參考點。
+
+        Returns:
+            int|None: 最近節點索引，找不到則回傳 None。
+        """
         if node_coords is None or len(node_coords) == 0: return None
         if not isinstance(p, np.ndarray): p = np.array(p)
         if p.shape != (2,): logger.warning(f"Invalid point shape {p.shape} in find_closest"); return None
@@ -234,6 +318,18 @@ class Graph_generator:
         except ValueError: logger.error("ValueError in find_closest_index", exc_info=True); return None
 
     def find_k_neighbor_all_nodes(self, robot_map, update_dense=True, global_graph:Graph=None, global_graph_knn_dist_max=GLOBAL_GRAPH_KNN_RAD, global_graph_knn_dist_min=CUR_AGENT_KNN_RAD):
+        """為每個 node 找 k 個鄰居並建立 graph.edges（包含 global graph 的補充）。
+
+        Args:
+            robot_map (ndarray): 地圖 (y,x)。
+            update_dense (bool): 是否更新雙向邊。
+            global_graph (Graph|None): 全域 graph 以考慮 global edges。
+            global_graph_knn_dist_max (float): global 邊距離上限。
+            global_graph_knn_dist_min (float): global 邊距離下限。
+
+        Returns:
+            None
+        """
         if self.node_coords is None or len(self.node_coords) == 0: return
         try: kd_tree = KDTree(self.node_coords)
         except (ValueError, IndexError) as e: logger.error(f"KDTree Error: {e}"); return
