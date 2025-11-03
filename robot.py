@@ -59,6 +59,8 @@ class Robot():
         self.is_returning = False
         self.return_replan_attempts = 0
         self.return_fail_cooldown = 0
+        # 新增 handoff 冷卻計數器
+        self.handoff_cooldown = 0
         # self.debug removed
 
 
@@ -75,6 +77,10 @@ class Robot():
         Returns:
             None
         """
+        # --- 在每步一開始遞減 handoff_cooldown ---
+        if self.handoff_cooldown > 0:
+            self.handoff_cooldown -= 1
+
         # --- 1. 感測與地圖合併 ---
         self.local_map = sensor_work(self.position, self.sensor_range, self.local_map, real_map)
         dist_to_server = np.linalg.norm(self.position - server.position)
@@ -96,59 +102,60 @@ class Robot():
                 merged = merge_maps_func([self.local_map, other_robot.local_map])
                 self.local_map[:] = merged
                 other_robot.local_map[:] = merged
-                
+
+                # 若任一方仍在 handoff 冷卻期，跳過交接判斷（但保留地圖合併）
+                if self.handoff_cooldown > 0 or getattr(other_robot, 'handoff_cooldown', 0) > 0:
+                    continue
+
                 # --- 2. 修改點：機會主義任務交接 (Task Handoff Logic) ---
-                
-                # Case 1: 我 (self) 正在返回 (A)，遇到 剛出發的 B (other_robot)
                 i_am_returning = self.is_returning
                 other_has_server_task = other_robot.target_gived_by_server and not other_robot.is_returning
-                
-                # Case 2: 我 (self) 剛出發 (B)，遇到 正在返回的 A (other_robot)
                 i_have_server_task = self.target_gived_by_server and not self.is_returning
                 other_is_returning = other_robot.is_returning
                 
                 if i_am_returning and other_has_server_task:
                     logger.info(f"[R{self.robot_id} Handoff] I am returning, taking task from R{other_robot.robot_id}. R{other_robot.robot_id} is now returning.")
-                    
                     # 我 (A) 接收 B 的任務
                     self.target_pos = other_robot.target_pos
                     self.planned_path = other_robot.planned_path
-                    self.target_gived_by_server = True # 標記為伺服器任務
+                    self.target_gived_by_server = True
                     self.is_returning = False; self.return_replan_attempts = 0; self.return_fail_cooldown = 0
                     
-                    # B 接收我的返回任務 (作為數據中繼)
-                    other_robot.target_pos = self.last_position_in_server_range # B 的新目標是伺服器
-                    other_robot.planned_path = [] # 強制 B 在下一步重新規劃返回路徑
-                    other_robot.is_returning = True # B 現在是返回狀態
-                    other_robot.target_gived_by_server = False # B 不再是執行伺服器任務
-                    other_robot.return_replan_attempts = 0 # 重置 B 的計數器
+                    # B 接收我的返回任務
+                    other_robot.target_pos = self.last_position_in_server_range
+                    other_robot.planned_path = []
+                    other_robot.is_returning = True
+                    other_robot.target_gived_by_server = False
+                    other_robot.return_replan_attempts = 0
+
+                    # 設定冷卻，避免立即反向交接
+                    self.handoff_cooldown = HANDOFF_COOLDOWN
+                    other_robot.handoff_cooldown = HANDOFF_COOLDOWN
 
                 elif i_have_server_task and other_is_returning:
                     logger.info(f"[R{self.robot_id} Handoff] I am departing, giving task to R{other_robot.robot_id}. I am now returning.")
-                    
-                    # 儲存我 (B) 的原始任務
                     my_original_target = self.target_pos
                     my_original_path = self.planned_path
-                    
                     # 我 (B) 接收 A 的返回任務
                     self.target_pos = other_robot.last_position_in_server_range
-                    self.planned_path = [] # 強制我重新規劃返回路徑
+                    self.planned_path = []
                     self.is_returning = True
                     self.target_gived_by_server = False
                     self.return_replan_attempts = 0
-                    
                     # A 接收我 (B) 的原始任務
                     other_robot.target_pos = my_original_target
                     other_robot.planned_path = my_original_path
                     other_robot.target_gived_by_server = True
                     other_robot.is_returning = False; other_robot.return_replan_attempts = 0; other_robot.return_fail_cooldown = 0
 
+                    # 設定冷卻，避免立即反向交接
+                    self.handoff_cooldown = HANDOFF_COOLDOWN
+                    other_robot.handoff_cooldown = HANDOFF_COOLDOWN
+
                 # Case 3: 其他情況 (例如兩個自主探索者相遇)
                 elif not self.is_in_server_range and not self.is_returning and not self.target_gived_by_server:
-                     # 雙方都清空路徑，以便基於合併後的新地圖重新決策
-                     self.planned_path = []
+                    self.planned_path = []
                 
-                # (如果 other_robot 也是 Case 3，它自己的 update_local_awareness 會清空它的路徑)
                 # --- 任務交接結束 ---
 
         # --- 1c. 與伺服器同步 (在交互之後) ---
@@ -212,7 +219,7 @@ class Robot():
 
     # ... (needs_new_target, decide_next_target, move_one_step, _select_node 保持不變) ...
     def needs_new_target(self):
-         """檢查是否需要新目標（路徑為空）。Returns bool。"""
+         """檢查是否需要新目標（路徑為空）。 Returns bool。"""
          return len(self.planned_path) < 1
 
     def decide_next_target(self, all_robots):
