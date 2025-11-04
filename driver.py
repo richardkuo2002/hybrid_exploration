@@ -26,16 +26,23 @@ def run_batch(n_runs=100, map_max_index=1000, agent_min=3, agent_max=5, seed=Non
 
     for i in range(n_runs):
         agent_num = random.randint(agent_min, agent_max)  # 3~5（含上下界）
-        map_index = random.randint(0, map_max_index)   # 0~1000（含上下界）
-        map_index = i+1  # 固定測試用
+        map_index = random.randint(0, map_max_index)   # 0~map_max_index（含上下界）
+        # 若需要固定測資以便重現，可手動啟用： map_index = i+1
         worker = Worker(global_step=0, agent_num=agent_num, map_index=map_index)
         t_start = time.perf_counter()
         success, finished_ep = worker.run_episode(curr_episode=i+1)
         t_end = time.perf_counter()
 
         dur = t_end - t_start
-        
-        finished_eps.append(finished_ep)
+
+        # 將 finished_ep 標準化為 scalar（若 worker 回傳 list/tuple，取最後一筆）
+        if isinstance(finished_ep, (list, tuple, np.ndarray)) and len(finished_ep) > 0:
+            finished_ep_scalar = finished_ep[-1]
+        elif isinstance(finished_ep, (int, float)):
+            finished_ep_scalar = finished_ep
+        else:
+            finished_ep_scalar = np.nan
+        finished_eps.append(finished_ep_scalar)
         successes.append(bool(success))
         agent_used.append(agent_num)
         map_indices.append(map_index)
@@ -47,11 +54,6 @@ def run_batch(n_runs=100, map_max_index=1000, agent_min=3, agent_max=5, seed=Non
 
     return finished_eps, successes, agent_used, map_indices, durations
 
-import numpy as np
-import matplotlib
-matplotlib.use('Agg')  # 無GUI環境可保留
-import matplotlib.pyplot as plt
-
 def save_and_viz_results(finished_eps, successes, agent_used, map_indices, durations, csv_path="results1.csv"):
     """
     將每次實驗指標存成 CSV，並計算按 map_index 奇偶分組的摘要統計：
@@ -60,15 +62,9 @@ def save_and_viz_results(finished_eps, successes, agent_used, map_indices, durat
       - duration_per_ep（中位數、平均）
     回傳資料表與摘要表；箱形圖建議在互動式環境繪製。
     """
-    # 若 finished_ep 是列表，取最後一個代表最終回合
-    fin_scalar = [
-        (fe[-1] if isinstance(fe, (list, tuple, np.ndarray)) and len(fe) > 0
-         else (fe if isinstance(fe, (int, float)) else np.nan))
-        for fe in finished_eps
-    ]
-
+    # finished_eps 應為 scalar list（run_batch 已轉換）。若不是，上面方法也能容忍處理。
     df = pd.DataFrame({
-        'finished_ep': fin_scalar,
+        'finished_ep': finished_eps,
         'success': successes,
         'agent_used': agent_used,
         'map_index': map_indices,
@@ -76,7 +72,8 @@ def save_and_viz_results(finished_eps, successes, agent_used, map_indices, durat
     })
 
     df['parity'] = np.where(df['map_index'] % 2 == 0, 'even', 'odd')
-    df['duration_per_ep'] = df['duration'] / df['finished_ep']
+    # 避免除以 0（或 NaN），以 NaN 代表不可計算
+    df['duration_per_ep'] = df['duration'] / df['finished_ep'].replace({0: np.nan})
 
     # 輸出 CSV
     df.to_csv(csv_path, index=False)
@@ -112,8 +109,12 @@ def plot_boxplots_finished_duration(
         skip_zero_finished (bool): 是否忽略 finished_ep==0 的樣本於第三個箱形圖。
         show_mean (bool): 箱形圖是否顯示平均值。
     """
-    # 轉為 ndarray 並做長度/數值檢查
-    fe = np.asarray(finished_eps, dtype=float)
+    # 轉為 ndarray 並做長度/數值檢查（若 element 為 list/tuple，取最後一項）
+    fe = np.array([
+        (fe[-1] if isinstance(fe, (list, tuple, np.ndarray)) and len(fe) > 0
+         else (fe if isinstance(fe, (int, float)) else np.nan))
+        for fe in finished_eps
+    ], dtype=float)
     du = np.asarray(durations, dtype=float)
 
     if fe.size == 0 or du.size == 0 or fe.size != du.size:
@@ -178,8 +179,6 @@ def plot_boxplots_finished_duration(
     plt.close(fig)
     print(f"Boxplot saved to {output_png}")
 
-import pandas as pd
-
 def save_results_csv(finished_eps, successes, agent_used, map_indices, durations, filename="results.csv"):
     df = pd.DataFrame({
         "finished_ep": finished_eps,
@@ -211,8 +210,12 @@ if __name__ == '__main__':
     save_results_csv(finished_eps, successes, agent_used, map_indices, durations)
     
     # 印出簡單統計
-    arr = np.array(finished_eps)
-    print(f"finished_ep stats -> count={arr.size}, mean={arr.mean():.2f}, median={np.median(arr):.2f}, std={arr.std(ddof=1):.2f}, min={arr.min()}, max={arr.max()}")
+    arr = np.array(finished_eps, dtype=float)
+    if arr.size > 0 and np.isfinite(arr).any():
+        finite = arr[np.isfinite(arr)]
+        print(f"finished_ep stats -> count={finite.size}, mean={finite.mean():.2f}, median={np.median(finite):.2f}, std={finite.std(ddof=1):.2f}, min={finite.min()}, max={finite.max()}")
+    else:
+        print("No valid finished_ep data to show stats.")
 
     # 畫箱形圖
     plot_boxplots_finished_duration(finished_eps, durations,  output_png="finished_ep_boxplot.png", title=f"Finished Episodes over {N_RUNS} runs")
