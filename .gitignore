@@ -3,6 +3,7 @@
 # 忽略地圖資料
 DungeonMaps/
 map_train/
+maps/
 
 # 忽略 Python 虛擬環境（如果有的話）
 venv/

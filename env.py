@@ -31,7 +31,8 @@ class Env():
             None
         """
         self.resolution = 4
-        self.map_path = "DungeonMaps/train/easy"
+        # self.map_path = "DungeonMaps/train/easy/"
+        self.map_path = "maps/easy_even"
         self.map_list = os.listdir(self.map_path)
         self.map_list.sort()
         self.map_list = [f for f in self.map_list if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
