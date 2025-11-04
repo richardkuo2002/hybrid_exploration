@@ -152,10 +152,14 @@ if __name__ == '__main__':
     parser.add_argument('--TEST_AGENT_NUM', type=int, default=3, help='Number of agents (default: 3)')
     parser.add_argument('--plot', action='store_true', help='Enable real-time plotting')
     parser.add_argument('--save_video', action=argparse.BooleanOptionalAction, default=True, help='Save video (default: True)')
-    parser.add_argument('--debug', action='store_true', help='Enable DEBUG level logging (default: INFO)')
+    parser.add_argument('--debug', action='store_true', help='Enable debug/info level logging (default: show only ERROR/CRITICAL)')
     args = parser.parse_args()
 
-    log_level = logging.DEBUG if args.debug else logging.INFO
+    # Default: only show ERROR and CRITICAL to reduce log noise.
+    # If --debug is provided, show INFO (and WARNING) as well. If you
+    # need DEBUG-level logs, re-run with --debug and set environment
+    # variable WORKER_DEBUG=1 to enable lower-level logs (optional).
+    log_level = logging.INFO if args.debug else logging.ERROR
     logging.basicConfig(level=log_level, format='%(asctime)s %(levelname)-8s [%(name)s] %(message)s', datefmt='%H:%M:%S')
 
     logger.info(f"Starting worker with Map Index: {args.TEST_MAP_INDEX}, Agent Num: {args.TEST_AGENT_NUM}, Plot: {args.plot}, Save Video: {args.save_video}")
