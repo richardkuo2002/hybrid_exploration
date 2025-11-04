@@ -1,84 +1,91 @@
 # 混合式多機器人探索 (Hybrid Multi-Robot Exploration)
 
-本專案實作一套混合式架構的多機器人探索系統，結合集中式伺服器與分散式（自主）機器人策略。 核心功能包括：局部感測與地圖建構、圖結構（collision-free graph）路徑規劃、伺服器任務分配（匈牙利演算法）、以及多機器人之間的任務移轉與地圖合併。
+本專案實作混合式多機器人探索系統，結合集中式伺服器與分散式機器人策略。核心功能包括局部感測與地圖建構、圖結構路徑規劃、伺服器任務分配，以及多機器人間的任務移轉與地圖合併。
 
-快速導覽
+## 主要元件
 
-* Env / Worker：模擬環境與單次實驗執行。
-* Robot / Sensor：機器人行為與感測模擬（簡化 Lidar）。
-* Server：全域地圖管理與任務分配。
-* Graph_generator / Node / Graph：以圖為基礎的節點生成與 A\* 規劃。
-* parameter.py：主要超參數。
+- `env.py`：環境初始化、地圖讀取、視覺化與影格緩衝/影片輸出（`Env` 類）。
+- `robot.py`：機器人行為、局部地圖與規劃。
+- `server.py`：全域地圖管理、任務分配與協調。
+- `graph_generator.py`、`graph.py`、`node.py`：節點生成與路徑規劃模組。
+- `sensor.py`：感測模擬（可用 numba/JIT 加速的實作）。
+- `utils.py`：通用工具（碰撞檢查等）。
+- `parameter.py`：各項超參數（感測範圍、圖更新間隔等）。
+- `worker.py` / `driver.py`：單次實驗或批次控制程式。
 
-必要資料與目錄結構 請確保專案內含地圖資料（範例路徑）：
+## 新增與重要說明（依程式碼）
 
-```bash
-hybrid_exploration/
-├── DungeonMaps/
-│   └── train/
-│       └── easy/
-│           └── <\*.png, \*.jpg ...>
-├── env.py
-├── worker.py
-├── requirements.txt
-└── ...
-```
+- 預設地圖路徑：`Env.__init__` 目前預設 `self.map_path = "maps/easy_even"`；啟動時會掃描該目錄並過濾影像檔。若無有效地圖檔案，程式會記錄錯誤並退出。
+- 影片儲存機制：`Env` 新增串流 / 緩衝設計（見 `Env._save_frame_to_memory` 與 `Env.save_video`）：
+  - 若系統可用 `cv2`（OpenCV），程式會嘗試以 `cv2.VideoWriter` 串流寫入臨時 mp4 檔，減少記憶體使用。完成後會將臨時檔搬到目標位置。
+  - 若不可用或串流失敗，會在記憶體中以 JPEG bytes 緩衝（`Env.frames_data`），並由 `save_video()` 在結束時合成影片。緩衝上限由 `Env._frames_buffer_max` 控制（預設 300）。
+- 繪圖：提供有視窗即時繪圖 (`plot_env(step, save_frame=False)`) 與 headless（無視窗）模式 (`plot_env_without_window`)；可透過 `save_frame=True` 或 headless 模式儲存每步影格。
+- numba/JIT：感測 (`sensor.py`) 與某些工具 (`utils.py`) 支援 numba 加速；若環境不支援 numba，可移除裝飾器以使用純 Python 實作。
 
-安裝
+## 安裝
 
-1. 建議使用虛擬環境：
+建議先建立 virtualenv 並安裝依賴：
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate   # Linux / macOS
-.venv\Scripts\activate      # Windows
-```
-
-2. 安裝相依套件：
-
-```bash
+source .venv/bin/activate   # macOS / Linux (zsh 可直接執行)
 pip install -r requirements.txt
 ```
 
-若要從 GitHub 取得原始碼（示範）：
+若希望啟用影片串流以節省記憶體，請安裝 OpenCV：
 
 ```bash
-git clone https://github.com/richardkuo2002/hybrid_exploration.git
-cd hybrid_exploration
+pip install opencv-python
 ```
 
-如何執行（單次模擬）
+## 如何執行（單次模擬）
 
-* 以預設參數執行：
+預設執行：
 
 ```bash
 python worker.py
 ```
 
-* 常用參數：
-  * --TEST\_MAP\_INDEX N ：指定地圖索引（整數）。
-  * --TEST\_AGENT\_NUM N ：機器人數量。
-  * --plot ：啟用即時繪圖視窗（會較耗資源）。
-  * --no-save\_video ：不儲存影片（預設會儲存）。
-  * --debug ：啟用詳細日誌。
+常用參數（視 `worker.py` / `driver.py` 支援）：
+- `--TEST_MAP_INDEX N`：指定要選取的地圖索引（從 `Env.map_path` 中列出檔案）。
+- `--TEST_AGENT_NUM N`：機器人數量。
+- `--plot`：啟用即時繪圖視窗（預設可能為啟用）。
+- `--no-save_video`：不儲存影片輸出。
+- `--debug`：啟用詳細日誌（增加 debug 輸出）。
 
-範例（指定地圖與機器人數）：
+範例：
 
 ```bash
 python worker.py --TEST_MAP_INDEX 1 --TEST_AGENT_NUM 3 --no-save_video
 ```
 
-影片輸出 若啟用儲存影片，預設會在專案下產生 `videos/` 目錄，輸出檔名會包含時間、地圖索引與機器人數。
+## 影片輸出與緩衝行為
 
-常見問題與注意事項
+- 若安裝 `opencv-python` 並可成功開啟 `cv2.VideoWriter`，程式會在執行期間直接串流寫入臨時 mp4 檔（通常較省記憶體），並在 `Env.save_video()` 被呼叫時將該臨時檔移至最終檔名。
+- 若 `cv2` 不可用或串流失敗，則會以 JPEG bytes 緩衝在 `Env.frames_data`，執行 `save_video()` 時再合成影片。為避免無限制記憶體成長，可調整 `Env._frames_buffer_max`。
 
-* 地圖格式：程式目前以灰階影像讀取，並將特定像素值 (e.g., 208) 當作起始點標記；請確認 DungeonMaps 內的地圖格式符合預期。
-* numba / JIT：部分感測與碰撞檢查函式使用 numba 加速，若環境不支援 numba，可先移除或使用對應的純 Python 版本。
-* 匯入錯誤：若模組互相引用產生循環匯入（ImportError），可檢查執行順序或將部分匯入移至函式內部以延遲加載。
+## 開發者注意事項
 
-開發者備註
+- 地圖格式：程式以灰階影像讀入，並把像素值 208（若存在）視為起始點；若未找到會使用預設起點 `[100, 100]`。
+- 若遇到循環匯入（ImportError），請嘗試將部分匯入延後到函式內或調整模組間依賴。
+- 若要停用 numba，加速裝飾器可在 `sensor.py` 與 `utils.py` 中移除。
+- 主要可調參數請在 `parameter.py` 中修改（例如 SENSOR_RANGE、GRAPH_UPDATE_INTERVAL、K_SIZE、_frames_buffer_max 等）。
 
-* 若要調整探索行為，請檢查 `parameter.py` 中的參數（例如 SENSOR\_RANGE、GRAPH\_UPDATE\_INTERVAL、K\_SIZE 等）。
-* 想要收集多次實驗結果，可撰寫或改良 `driver.py` 進行批次執行。
+## 檔案位置速查
 
-聯絡 如需協助或回報問題，請在專案的 issue 中描述執行環境、錯誤日誌與重現步驟。
+- 主控制 / 執行：`worker.py`, `driver.py`
+- 環境/視覺化：`env.py`
+- 機器人邏輯：`robot.py`
+- 伺服器：`server.py`
+- 圖結構：`graph_generator.py`, `graph.py`, `node.py`
+- 感測：`sensor.py`
+- 工具：`utils.py`
+- 參數：`parameter.py`
+
+## 批次測試
+
+若要批次執行多張地圖或多次實驗，請參考 `driver.py` 中的範例/註解，或修改 `worker.py` 以接受外部參數與輸出結果到指定目錄。
+
+---
+
+若要我把 README 再微調為英文版本、或加入快速參考指令樣板（Makefile / scripts/），我可以接著建立分支與額外檔案。
