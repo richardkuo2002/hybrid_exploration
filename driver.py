@@ -5,6 +5,7 @@ import pandas as pd
 import matplotlib
 matplotlib.use('Agg')  # 若不想跳出視窗，使用無GUI後端
 import matplotlib.pyplot as plt
+import logging
 
 from worker import Worker
 
@@ -28,7 +29,7 @@ def run_batch(n_runs=100, map_max_index=1000, agent_min=3, agent_max=5, seed=Non
         agent_num = random.randint(agent_min, agent_max)  # 3~5（含上下界）
         map_index = random.randint(0, map_max_index)   # 0~map_max_index（含上下界）
         # 若需要固定測資以便重現，可手動啟用： map_index = i+1
-        worker = Worker(global_step=0, agent_num=agent_num, map_index=map_index)
+        worker = Worker(global_step=0, agent_num=agent_num, map_index=map_index, save_video=False)
         t_start = time.perf_counter()
         success, finished_ep = worker.run_episode(curr_episode=i+1)
         t_end = time.perf_counter()
@@ -197,7 +198,8 @@ if __name__ == '__main__':
     MAP_MAX_INDEX = 10000
     AGENT_MIN = 3
     AGENT_MAX = 3
-    SEED = 42  # 可設 None
+    SEED = 42  # 可設 None'
+    logging.getLogger().setLevel(logging.ERROR)
 
     finished_eps, successes, agent_used, map_indices, durations = run_batch(
         n_runs=N_RUNS,
