@@ -46,12 +46,14 @@ pip install opencv-python
 python worker.py
 ```
 
-常用參數（視 `worker.py` / `driver.py` 支援）：
+- 常用參數（視 `worker.py` / `driver.py` 支援）：
 - `--TEST_MAP_INDEX N`：指定要選取的地圖索引（從 `Env.map_path` 中列出檔案）。
 - `--TEST_AGENT_NUM N`：機器人數量。
 - `--plot`：啟用即時繪圖視窗（預設可能為啟用）。
 - `--no-save_video`：不儲存影片輸出。
 - `--debug`：啟用詳細日誌（增加 debug 輸出）。
+
+注意：預設情況下程式只會顯示 ERROR / CRITICAL 訊息以減少日誌噪音；如果想看到 INFO 與 WARNING，請加上 `--debug`。若需要更低層級的 DEBUG 訊息，可進一步修改 `worker.py` 或在執行環境中設定（參見開發者注意事項）。
 
 範例：
 
@@ -70,6 +72,14 @@ python worker.py --TEST_MAP_INDEX 1 --TEST_AGENT_NUM 3 --no-save_video
 - 若遇到循環匯入（ImportError），請嘗試將部分匯入延後到函式內或調整模組間依賴。
 - 若要停用 numba，加速裝飾器可在 `sensor.py` 與 `utils.py` 中移除。
 - 主要可調參數請在 `parameter.py` 中修改（例如 SENSOR_RANGE、GRAPH_UPDATE_INTERVAL、K_SIZE、_frames_buffer_max 等）。
+
+### 日誌（Logging）
+
+- 預設：為了減少終端噪音，程式預設只顯示 ERROR 與 CRITICAL 等級的日誌。
+- 如需看到 INFO 與 WARNING：在啟動時加上 `--debug`（例如 `python worker.py --debug`）。
+- 如需顯示 DEBUG 級別訊息，可修改 `worker.py` 中的 logging 設定或手動在執行前設定環境變數（例如 `WORKER_DEBUG=1`，視實作而定）。
+
+這可幫助在常規測試時只關注錯誤，而在除錯時取得更完整的運行資訊。
 
 ## 檔案位置速查
 
