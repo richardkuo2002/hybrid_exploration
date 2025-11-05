@@ -1,6 +1,7 @@
 import numpy as np
 from collections import deque
 import logging
+import copy
 
 from parameter import *
 from graph_generator import Graph_generator
@@ -121,15 +122,16 @@ class Robot():
                 if i_am_returning and other_has_server_task:
                     logger.info(f"[R{self.robot_id} Handoff] I am returning, taking task from R{other_robot.robot_id}. R{other_robot.robot_id} is now returning.")
                     # 我 (A) 接收 B 的任務
-                    self.target_pos = other_robot.target_pos
-                    self.planned_path = other_robot.planned_path
+                    # 使用深拷貝以避免共享參考
+                    self.target_pos = copy.deepcopy(other_robot.target_pos)
+                    self.planned_path = copy.deepcopy(other_robot.planned_path)
                     self.target_gived_by_server = True
                     self.is_returning = False
                     self.return_replan_attempts = 0
                     self.return_fail_cooldown = 0
 
                     # B 接收我的返回任務
-                    other_robot.target_pos = self.last_position_in_server_range
+                    other_robot.target_pos = copy.deepcopy(self.last_position_in_server_range)
                     other_robot.planned_path = []
                     other_robot.is_returning = True
                     other_robot.target_gived_by_server = False
@@ -141,15 +143,16 @@ class Robot():
 
                 elif i_have_server_task and other_is_returning:
                     logger.info(f"[R{self.robot_id} Handoff] I am departing, giving task to R{other_robot.robot_id}. I am now returning.")
-                    my_original_target = self.target_pos
-                    my_original_path = self.planned_path
+                    # 深拷貝原始任務，避免後續修改造成共享
+                    my_original_target = copy.deepcopy(self.target_pos)
+                    my_original_path = copy.deepcopy(self.planned_path)
                     # 我 (B) 接收 A 的返回任務
-                    self.target_pos = other_robot.last_position_in_server_range
+                    self.target_pos = copy.deepcopy(other_robot.last_position_in_server_range)
                     self.planned_path = []
                     self.is_returning = True
                     self.target_gived_by_server = False
                     self.return_replan_attempts = 0
-                    # A 接收我 (B) 的原始任務
+                    # A 接收我 (B) 的原始任務（拷貝）
                     other_robot.target_pos = my_original_target
                     other_robot.planned_path = my_original_path
                     other_robot.target_gived_by_server = True
