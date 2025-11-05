@@ -24,19 +24,22 @@
 
 ## 安裝
 
-建議先建立 virtualenv 並安裝依賴：
+建議使用 conda 建立隔離環境並安裝依賴（範例使用環境名稱 `hybrid`）：
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate   # macOS / Linux (zsh 可直接執行)
+conda create -n hybrid python=3.10 -y
+conda activate hybrid
 pip install -r requirements.txt
 ```
 
-若希望啟用影片串流以節省記憶體，請安裝 OpenCV：
+若希望啟用影片串流以節省記憶體，請安裝 OpenCV（在 conda 下推薦使用 pip 的輪子或 conda-forge）：
 
 ```bash
-pip install opencv-python
+conda activate hybrid
+pip install opencv-python          # 或: conda install -c conda-forge opencv
 ```
+
+備註：若你偏好使用 `venv`，原本的 `python -m venv .venv` + `source .venv/bin/activate` 方式仍然有效。
 
 ## 如何執行（單次模擬）
 
