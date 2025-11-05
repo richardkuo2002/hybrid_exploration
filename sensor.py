@@ -6,6 +6,7 @@
 import numpy as np
 import copy
 from numba import jit # <--- 1. 匯入 jit
+from parameter import OBSTACLE_THICKNESS
 # 假設 collision_check 已經在 utils.py 中被 @jit 修飾
 from utils import check_collision # 確保從 utils 匯入的是 JIT 版本
 
@@ -110,6 +111,8 @@ def _sensor_collision_check_wrapper(x0_f, y0_f, x1_f, y1_f, real_map, local_map_
     max_steps = 10000 
     steps = 0
 
+    # collision_flag 計算連續 obstacle 的次數
+    collision_flag = 0
     while steps < max_steps:
         steps += 1
         # 邊界檢查
@@ -117,19 +120,22 @@ def _sensor_collision_check_wrapper(x0_f, y0_f, x1_f, y1_f, real_map, local_map_
             break
 
         k = real_map[y, x] # 使用標準索引
-
-        # 更新 local map：障礙 (1) 一定要寫入；free (255) 只在該位置尚未被標為障礙時才寫入
-        # （避免後來的 free 觀測覆蓋先前由其他觀測或合併得到的障礙）
+        # 更新 local map 並應用 obstacle-thickness 行為
         if k == 1:
+            # 標記為 obstacle
             local_map_copy[y, x] = 1
-        elif k == 255:
-            # 只有當目前 local map 不是 obstacle 時才寫入 free
-            if local_map_copy[y, x] != 1:
-                local_map_copy[y, x] = 255
-
-        # 碰到障礙物停止
-        if k == 1:
-            break
+            collision_flag += 1
+            # 若已累計到厚度門檻，視為真正阻斷並停止
+            if collision_flag >= OBSTACLE_THICKNESS:
+                break
+        else:
+            # 遇到非 obstacle 且先前有累計 obstacle（但未達門檻）時，中斷
+            if collision_flag > 0:
+                break
+            # 若為 free，且當前 belief 非 obstacle，則標為 free
+            if k == 255:
+                if local_map_copy[y, x] != 1:
+                    local_map_copy[y, x] = 255
         # 碰到未知區域也可能需要停止，取決於感測器模型
         # if k == 127:
         #    break
