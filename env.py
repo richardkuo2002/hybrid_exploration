@@ -126,9 +126,20 @@ class Env():
         """
         merged_map = np.ones_like(self.real_map) * 127
         valid_maps = [m for m in maps_to_merge if isinstance(m, np.ndarray)]
-        if not valid_maps: return merged_map
+        if not valid_maps:
+            return merged_map
+
+        # Aggregate observations across maps. We want obstacles to override free
+        # (so obstacles are preserved after merging). Compute presence masks
+        # and then assign free first, obstacles last to ensure dominance.
+        any_obs = np.zeros_like(self.real_map, dtype=bool)
+        any_free = np.zeros_like(self.real_map, dtype=bool)
         for belief in valid_maps:
-            merged_map[belief == 1] = 1; merged_map[belief == 255] = 255
+            any_obs |= (belief == 1)
+            any_free |= (belief == 255)
+
+        merged_map[any_free] = 255
+        merged_map[any_obs] = 1
         return merged_map
     def update_robot_local_map(self, robot_position, sensor_range, robot_local_map, real_map):
         """呼叫 sensor_work 更新機器人的 local map。

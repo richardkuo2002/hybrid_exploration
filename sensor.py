@@ -118,9 +118,14 @@ def _sensor_collision_check_wrapper(x0_f, y0_f, x1_f, y1_f, real_map, local_map_
 
         k = real_map[y, x] # 使用標準索引
 
-        # 更新 local map (只更新 free 和 obstacle)
-        if k == 1 or k == 255: # 假設 1=obs, 255=free
-            local_map_copy[y, x] = k
+        # 更新 local map：障礙 (1) 一定要寫入；free (255) 只在該位置尚未被標為障礙時才寫入
+        # （避免後來的 free 觀測覆蓋先前由其他觀測或合併得到的障礙）
+        if k == 1:
+            local_map_copy[y, x] = 1
+        elif k == 255:
+            # 只有當目前 local map 不是 obstacle 時才寫入 free
+            if local_map_copy[y, x] != 1:
+                local_map_copy[y, x] = 255
 
         # 碰到障礙物停止
         if k == 1:
