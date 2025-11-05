@@ -56,9 +56,44 @@ class Env():
         self.robot_list:list[Robot] = []
         self.server.all_robot_position = [None] * n_agent
         self.server.robot_in_range = [False] * n_agent
+        # Deterministic placement: cycle through top-left, top-right, bottom-right, bottom-left
+        start_positions = []
+        center = self.start_position if self.start_position is not None else np.array([0, 0])
+        # offset distance from center (keep within server comm range and map bounds)
+        offset_dist = int(min(SERVER_COMM_RANGE * 0.05, min(self.real_map.shape) // 4))
+        # ordered offsets: TL, TR, BR, BL (x,y)
+        offsets = [(-offset_dist, -offset_dist), (offset_dist, -offset_dist), (offset_dist, offset_dist), (-offset_dist, offset_dist)]
+
+        def find_nearest_free(xc, yc, max_search=8):
+            # deterministic neighborhood search (increasing Manhattan radius)
+            h, w = self.real_map.shape
+            if 0 <= xc < w and 0 <= yc < h and self.real_map[yc, xc] == 255:
+                return np.array([xc, yc])
+            for r in range(1, max_search+1):
+                for dx in range(-r, r+1):
+                    for dy in (-r, r):
+                        nx, ny = xc + dx, yc + dy
+                        if 0 <= nx < w and 0 <= ny < h and self.real_map[ny, nx] == 255:
+                            return np.array([nx, ny])
+                for dy in range(-r+1, r):
+                    for dx in (-r, r):
+                        nx, ny = xc + dx, yc + dy
+                        if 0 <= nx < w and 0 <= ny < h and self.real_map[ny, nx] == 255:
+                            return np.array([nx, ny])
+            return None
 
         for i in range(self.n_agent):
-            robot = Robot(self.start_position, self.real_map_size, self.resolution, k_size, plot=plot)
+            off = offsets[i % len(offsets)]
+            cand_x = int(round(center[0] + off[0]))
+            cand_y = int(round(center[1] + off[1]))
+            pos = find_nearest_free(cand_x, cand_y, max_search=8)
+            if pos is None:
+                pos = np.array(center)
+            start_positions.append(pos)
+
+        for i in range(self.n_agent):
+            robot_start = start_positions[i]
+            robot = Robot(robot_start, self.real_map_size, self.resolution, k_size, plot=plot)
             robot.robot_id = i
             try:
                 robot.local_map = self.update_robot_local_map(robot.position, robot.sensor_range, robot.local_map, self.real_map)
