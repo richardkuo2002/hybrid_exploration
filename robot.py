@@ -239,6 +239,26 @@ class Robot():
         except Exception as e:
             logger.error(f"Robot {self.robot_id} failed update_node_utilities: {e}", exc_info=True)
 
+        # Fallback: if robot is in server range and graph_generator produced no candidates,
+        # but server has candidates, copy them (deepcopy) to robot to allow selection/assignment.
+        try:
+            if self.is_in_server_range and hasattr(server, 'graph_generator') and hasattr(server.graph_generator, 'target_candidates'):
+                own_cands = getattr(self.graph_generator, 'target_candidates', None)
+                server_cands = getattr(server.graph_generator, 'target_candidates', None)
+                if (own_cands is None or (isinstance(own_cands, (list, tuple, np.ndarray)) and len(own_cands) == 0)) and server_cands is not None and len(server_cands) > 0:
+                    try:
+                        # copy server-side candidate info into robot
+                        self.graph_generator.target_candidates = copy.deepcopy(server.graph_generator.target_candidates)
+                        self.graph_generator.candidates_utility = copy.deepcopy(server.graph_generator.candidates_utility)
+                        self.node_utility = copy.deepcopy(server.graph_generator.node_utility)
+                        self.node_coords = copy.deepcopy(server.graph_generator.node_coords)
+                        self.local_map_graph = copy.deepcopy(server.local_map_graph) if hasattr(server, 'local_map_graph') else copy.deepcopy(server.graph_generator.graph.edges)
+                        logger.debug(f"[R{self.robot_id} Awareness] Fallback: copied {len(self.graph_generator.target_candidates)} candidates from server.")
+                    except Exception:
+                        logger.exception(f"[R{self.robot_id} Awareness] Fallback copy from server failed.")
+        except Exception:
+            logger.exception(f"[R{self.robot_id} Awareness] Error in fallback candidate sync.")
+
         # 若 local_map_graph 缺失或為空，則在間隔到達時執行一次重建（避免每步重建造成高昂代價）
         need_local_rebuild = False
         try:

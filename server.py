@@ -8,6 +8,7 @@ import logging
 from parameter import *
 from graph_generator import Graph_generator
 from graph import Graph, a_star, Edge # <--- 匯入 Edge
+import copy
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +122,34 @@ class Server():
                  logger.error(f"[Server Step] Failed update_node_utilities: {e}", exc_info=True)
 
         self.frontiers = new_frontiers
+
+        # --- 同步 server-side graph 給在通訊範圍內的 robots（深拷貝，避免共享引用） ---
+        try:
+            if hasattr(self, 'node_coords') and self.node_coords is not None and hasattr(self, 'local_map_graph') and self.local_map_graph is not None:
+                for i, robot in enumerate(robot_list):
+                    in_range = False
+                    if i < len(self.robot_in_range):
+                        in_range = self.robot_in_range[i]
+                    if in_range:
+                        try:
+                            # 同步機器人可用的 graph 資訊
+                            robot.node_coords = copy.deepcopy(self.node_coords)
+                            robot.local_map_graph = copy.deepcopy(self.local_map_graph)
+                            robot.node_utility = copy.deepcopy(self.node_utility)
+                            robot.guidepost = copy.deepcopy(self.guidepost)
+                            # 同步 graph_generator 內部結構，確保 robots 的輕量更新可以作用於完整 nodes_list
+                            try:
+                                robot.graph_generator.node_coords = copy.deepcopy(self.graph_generator.node_coords)
+                                robot.graph_generator.nodes_list = copy.deepcopy(self.graph_generator.nodes_list)
+                                robot.graph_generator.graph = copy.deepcopy(self.graph_generator.graph)
+                                robot.graph_generator.target_candidates = copy.deepcopy(self.graph_generator.target_candidates)
+                                robot.graph_generator.candidates_utility = copy.deepcopy(self.graph_generator.candidates_utility)
+                            except Exception:
+                                logger.exception(f"[Server Step] Partial graph_generator sync failed for robot {i}")
+                        except Exception:
+                            logger.exception(f"[Server Step] Failed to sync graph to robot {i}")
+        except Exception:
+            logger.exception("[Server Step] Failed to sync graphs to robots")
 
         # --- 2. 篩選需要任務的機器人 ---
         # ... (邏輯不變) ...
