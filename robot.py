@@ -295,28 +295,25 @@ class Robot():
         except Exception:
             logger.exception(f"[R{self.robot_id} Awareness] Error in fallback candidate sync.")
 
-        # 若 local_map_graph 缺失或為空，則在間隔到達時執行一次重建（避免每步重建造成高昂代價）
-        need_local_rebuild = False
+        # 根據全域參數 GRAPH_UPDATE_INTERVAL 決定何時做 local rebuild。
+        # 原先僅在 local_map_graph 缺失或為空時才重建；應用者要求 robots 端也每步更新一次
+        #（當 GRAPH_UPDATE_INTERVAL == 1 則每步皆會重建）。此處改為每隔 GRAPH_UPDATE_INTERVAL 步嘗試重建。
         try:
-            if self.local_map_graph is None:
-                need_local_rebuild = True
-            elif isinstance(self.local_map_graph, dict) and len(self.local_map_graph) == 0:
-                need_local_rebuild = True
+            if (self.graph_update_counter % GRAPH_UPDATE_INTERVAL) == 0:
+                logger.debug(f"[R{self.robot_id} Awareness] Scheduled local rebuild (counter={self.graph_update_counter})...")
+                try:
+                    node_coords, graph_edges, node_utility, guidepost = self.graph_generator.rebuild_graph_structure(
+                        self.local_map, new_frontiers, self.frontiers, self.position
+                    )
+                    self.node_coords = node_coords
+                    self.local_map_graph = graph_edges
+                    self.node_utility = node_utility
+                    self.guidepost = guidepost
+                except Exception as e:
+                    logger.error(f"Robot {self.robot_id} failed rebuild_graph_structure: {e}", exc_info=True)
         except Exception:
-            need_local_rebuild = True
-
-        if need_local_rebuild and (self.graph_update_counter % GRAPH_UPDATE_INTERVAL == 0):
-            logger.debug(f"[R{self.robot_id} Awareness] local_map_graph missing/empty -> performing local rebuild...")
-            try:
-                node_coords, graph_edges, node_utility, guidepost = self.graph_generator.rebuild_graph_structure(
-                    self.local_map, new_frontiers, self.frontiers, self.position
-                )
-                self.node_coords = node_coords
-                self.local_map_graph = graph_edges
-                self.node_utility = node_utility
-                self.guidepost = guidepost
-            except Exception as e:
-                logger.error(f"Robot {self.robot_id} failed rebuild_graph_structure: {e}", exc_info=True)
+            # 保守處理：若計數或取模出錯，不做任何事
+            logger.exception(f"[R{self.robot_id} Awareness] Error while checking GRAPH_UPDATE_INTERVAL for local rebuild.")
 
         self.frontiers = new_frontiers
 
