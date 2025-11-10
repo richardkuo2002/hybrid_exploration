@@ -8,7 +8,7 @@ MAX_EPS_STEPS=196
 K_SIZE = 30
 
 # --- 修改點：加回圖更新間隔 ---
-GRAPH_UPDATE_INTERVAL = 5  # 每 5 步重建圖結構（減少頻繁重建以降低 timing mismatch）
+GRAPH_UPDATE_INTERVAL = 1  # 每 1 步重建圖結構（測試是否改善 coverage 與同步性）
 # -----------------------------
 
 # --- 智慧會合機制參數 ---
