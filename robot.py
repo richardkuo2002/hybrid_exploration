@@ -556,10 +556,60 @@ class Robot():
         if len(valid_dists) == 0:
             logger.debug(f"[R{self.robot_id} SelectNode] Valid dists empty.")
             return self.position, 0, 0
-        λ = 1.0
+        # 新選點策略：在有效候選集合內對 utility 與 distance 做正規化，
+        # 再以權重合併：score = w_u * util_norm + (1-w_u) * (1 - dist_norm)
+        # 保留 epsilon 保護分母
         epsilon = 1e-6
         min_valid_dists = np.min(valid_dists) if len(valid_dists) > 0 else 0
-        scores = λ * valid_utilities / (valid_dists + epsilon)
+        # 正規化 utility 與 distance，避免尺度不一致造成偏差
+        max_util = np.max(valid_utilities) if len(valid_utilities) > 0 else 0
+        min_util = np.min(valid_utilities) if len(valid_utilities) > 0 else 0
+        max_dist = np.max(valid_dists) if len(valid_dists) > 0 else 0
+        min_dist = np.min(valid_dists) if len(valid_dists) > 0 else 0
+        # util_norm in [0,1], dist_norm in [0,1]
+        if max_util - min_util <= 0:
+            util_norm = np.ones_like(valid_utilities)
+        else:
+            util_norm = (valid_utilities - min_util) / (max_util - min_util + epsilon)
+        if max_dist - min_dist <= 0:
+            dist_norm = np.zeros_like(valid_dists)
+        else:
+            dist_norm = (valid_dists - min_dist) / (max_dist - min_dist + epsilon)
+        # weight from parameter
+        try:
+            from parameter import SELECTION_UTILITY_WEIGHT, SELECTION_USE_PATH_COST, SELECTION_PATH_COST_TOPK
+            w_u = float(SELECTION_UTILITY_WEIGHT)
+        except Exception:
+            w_u = 0.7
+        # base score: 越大越好（util high, dist small）
+        scores = w_u * util_norm + (1.0 - w_u) * (1.0 - dist_norm)
+        # 若啟用 path-cost 模式，可對 top-K candidate 使用更精確的路徑成本 (A*)，並用 path-cost 替代 dist_norm
+        try:
+            if SELECTION_USE_PATH_COST:
+                # 先以 scores 排序取 top-K 再用 A* 計算實際路徑距離作替換
+                topk = int(SELECTION_PATH_COST_TOPK) if SELECTION_PATH_COST_TOPK is not None else 5
+                topk = max(1, min(topk, len(valid_candidates)))
+                topk_indices = np.argsort(-scores)[:topk]
+                path_costs = np.zeros(len(topk_indices))
+                for ii, vi in enumerate(topk_indices):
+                    cand = valid_candidates[vi]
+                    # 使用 graph_generator 的 find_shortest_path
+                    try:
+                        dist, route = self.graph_generator.find_shortest_path(self.position, cand, self.node_coords, None)
+                        path_costs[ii] = dist if route is not None else 1e6
+                    except Exception:
+                        path_costs[ii] = 1e6
+                # normalize path costs and replace corresponding scores
+                if np.max(path_costs) - np.min(path_costs) > 0:
+                    pc_norm = (path_costs - np.min(path_costs)) / (np.max(path_costs) - np.min(path_costs) + epsilon)
+                else:
+                    pc_norm = np.zeros_like(path_costs)
+                for idx_local, pcn in zip(topk_indices, pc_norm):
+                    # 用 1 - pcn 作為距離部分的替代（距離小 => 高分）
+                    scores[idx_local] = w_u * util_norm[idx_local] + (1.0 - w_u) * (1.0 - pcn)
+        except Exception:
+            # 若計算路徑成本失敗，回退到原始 scores
+            pass
         best_idx_in_valid = np.argmax(scores)
         selected_coord = valid_candidates[best_idx_in_valid]
         original_indices = np.where(valid_mask)[0]

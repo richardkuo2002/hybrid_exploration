@@ -29,3 +29,11 @@ GLOBAL_NODES_TO_FRONTIER_AVOID_SPARSE_RAD=120
 OBSTACLE_THICKNESS = 10
 # 當 frontier 變化數量超過此門檻時，才觸發完整 rebuild（預設較保守）
 FRONTIER_REBUILD_THRESHOLD = 50
+
+# 選點策略參數：在選點時對 utility 與 distance 做正規化並以權重合併
+# 0..1 的值，越靠近 1 表示越偏好效用（utility），越靠近 0 表示越偏好距離
+SELECTION_UTILITY_WEIGHT = 0.7
+# 若啟用則在選點時對前 N 個 Euclid 最佳候選使用 A* 取得真實路徑代價
+SELECTION_USE_PATH_COST = False
+# 當 SELECTION_USE_PATH_COST 為 True 時，先以 Euclid 排序並取 top K 再跑 A*
+SELECTION_PATH_COST_TOPK = 5
