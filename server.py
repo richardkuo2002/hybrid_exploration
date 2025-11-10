@@ -13,7 +13,7 @@ import copy
 logger = logging.getLogger(__name__)
 
 class Server():
-    def __init__(self, start_position, real_map_size, resolution, k_size, plot=False): # removed debug
+    def __init__(self, start_position, real_map_size, resolution, k_size, plot=False, force_sync_debug=False): # removed debug
         """初始化 Server，管理全域地圖與任務分派狀態。
 
         Args:
@@ -41,7 +41,7 @@ class Server():
         self.guidepost = None
         self.resolution = resolution
         self.graph_update_counter = 0 # Re-added counter
-        # self.debug removed
+        self.force_sync_debug = force_sync_debug
 
     def update_and_assign_tasks(self, robot_list, real_map, find_frontier_func):
         """伺服器在一步之內更新圖、計算效用並指派任務。
@@ -123,14 +123,16 @@ class Server():
 
         self.frontiers = new_frontiers
 
-        # --- 同步 server-side graph 給在通訊範圍內的 robots（深拷貝，避免共享引用） ---
+        # --- 同步 server-side graph 給 robot（深拷貝，避免共享引用） ---
         try:
             if hasattr(self, 'node_coords') and self.node_coords is not None and hasattr(self, 'local_map_graph') and self.local_map_graph is not None:
                 for i, robot in enumerate(robot_list):
                     in_range = False
                     if i < len(self.robot_in_range):
                         in_range = self.robot_in_range[i]
-                    if in_range:
+                    # 如果啟用了 debug 強制同步，則無條件同步給所有 robots（用於觸發 mismatch diagnostics）
+                    do_sync = self.force_sync_debug or in_range
+                    if do_sync:
                         try:
                             # 同步機器人可用的 graph 資訊
                             robot.node_coords = copy.deepcopy(self.node_coords)

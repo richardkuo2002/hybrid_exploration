@@ -246,6 +246,28 @@ class Robot():
                 own_cands = getattr(self.graph_generator, 'target_candidates', None)
                 server_cands = getattr(server.graph_generator, 'target_candidates', None)
                 if (own_cands is None or (isinstance(own_cands, (list, tuple, np.ndarray)) and len(own_cands) == 0)) and server_cands is not None and len(server_cands) > 0:
+                    # Only emit extra diagnostics when mismatch occurs (server has candidates, robot has none)
+                    try:
+                        server_frontiers = getattr(server, 'frontiers', None)
+                        robot_frontiers = new_frontiers if 'new_frontiers' in locals() else getattr(self, 'frontiers', None)
+                        srv_f_len = len(server_frontiers) if server_frontiers is not None else 0
+                        rbt_f_len = len(robot_frontiers) if robot_frontiers is not None else 0
+                        srv_sample = server_frontiers[:3].tolist() if server_frontiers is not None and len(server_frontiers) > 0 else []
+                        rbt_sample = robot_frontiers[:3].tolist() if robot_frontiers is not None and len(robot_frontiers) > 0 else []
+                        srv_map_shape = getattr(server, 'global_map', None).shape if getattr(server, 'global_map', None) is not None else None
+                        rbt_map_shape = getattr(self, 'local_map', None).shape if getattr(self, 'local_map', None) is not None else None
+                        # concise fingerprint: sum of coords (stable small-int) to help quick diffing
+                        try:
+                            srv_f_fp = int(np.sum(server_frontiers)) if server_frontiers is not None and len(server_frontiers) > 0 else None
+                        except Exception:
+                            srv_f_fp = None
+                        try:
+                            rbt_f_fp = int(np.sum(robot_frontiers)) if robot_frontiers is not None and len(robot_frontiers) > 0 else None
+                        except Exception:
+                            rbt_f_fp = None
+                        logger.warning(f"[R{self.robot_id} Awareness] MISMATCH DIAG: server_cands={len(server_cands)} vs robot_cands=0 | srv_frontiers_len={srv_f_len} srv_sample={srv_sample} srv_fp={srv_f_fp} | rbt_frontiers_len={rbt_f_len} rbt_sample={rbt_sample} rbt_fp={rbt_f_fp} | srv_map_shape={srv_map_shape} rbt_map_shape={rbt_map_shape}")
+                    except Exception:
+                        logger.exception(f"[R{self.robot_id} Awareness] Error while logging mismatch diagnostics.")
                     try:
                         # copy server-side candidate info into robot
                         self.graph_generator.target_candidates = copy.deepcopy(server.graph_generator.target_candidates)

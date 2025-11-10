@@ -18,7 +18,7 @@ from parameter import *
 logger = logging.getLogger(__name__)
 
 class Env():
-    def __init__(self, n_agent:int, k_size=20, map_index=0, plot=True):
+    def __init__(self, n_agent:int, k_size=20, map_index=0, plot=True, force_sync_debug=False):
         """初始化環境 (讀取地圖、建立伺服器與機器人)。
 
         Args:
@@ -51,9 +51,10 @@ class Env():
              raise
 
         self.real_map_size = np.shape(self.real_map)
-        self.server = Server(self.start_position, self.real_map_size, self.resolution, k_size, plot)
+        self.force_sync_debug = force_sync_debug
+        self.server = Server(self.start_position, self.real_map_size, self.resolution, k_size, plot, force_sync_debug=self.force_sync_debug)
         self.n_agent = n_agent
-        self.robot_list:list[Robot] = []
+        self.robot_list: list[Robot] = []
         self.server.all_robot_position = [None] * n_agent
         self.server.robot_in_range = [False] * n_agent
         # Deterministic placement: cycle through top-left, top-right, bottom-right, bottom-left
