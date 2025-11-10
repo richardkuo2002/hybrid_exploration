@@ -197,6 +197,20 @@ class Graph_generator:
         if self.nodes_list is None: self.nodes_list = []
         if frontiers is None: frontiers = np.array([]).reshape(0, 2)
         if old_frontiers is None: old_frontiers = np.array([]).reshape(0, 2)
+        # Diagnostic: log inputs and current internal lists to help trace empty-results issue
+        try:
+            logger.debug(f"[Diag _update] frontiers_shape={getattr(frontiers, 'shape', None)} old_frontiers_shape={getattr(old_frontiers, 'shape', None)} robot_map_shape={getattr(robot_map, 'shape', None)} node_coords_len={len(self.node_coords) if hasattr(self, 'node_coords') and self.node_coords is not None else 0} nodes_list_len={len(self.nodes_list)}")
+            # sample first few nodes if present
+            if len(self.nodes_list) > 0:
+                sample = []
+                for n in self.nodes_list[:5]:
+                    try:
+                        sample.append((tuple(n.coords) if hasattr(n, 'coords') else None, getattr(n, 'utility', None)))
+                    except Exception:
+                        sample.append((None, None))
+                logger.debug(f"[Diag _update] nodes_list_sample={sample}")
+        except Exception:
+            logger.exception("Error logging diagnostics in _update_nodes_and_utilities")
         observed_frontiers_set = set(); new_frontiers_only = frontiers
         if len(old_frontiers) > 0 and len(frontiers) > 0:
             old_set = set(map(tuple, old_frontiers)); new_set = set(map(tuple, frontiers))

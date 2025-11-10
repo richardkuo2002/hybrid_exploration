@@ -46,17 +46,18 @@ class Robot():
             self.graph_generator.route_node.append(start_position)
 
         # Create an initial local graph so robots have candidates even when out of server range
+        # Use rebuild_graph_structure once at init to ensure Node objects (nodes_list) are created
         try:
             empty_frontiers = np.array([]).reshape(0, 2)
-            node_coords, graph_edges, node_utility, guidepost = self.graph_generator.generate_graph(
-                self.position, self.local_map, empty_frontiers
+            node_coords, graph_edges, node_utility, guidepost = self.graph_generator.rebuild_graph_structure(
+                self.local_map, empty_frontiers, None, self.position
             )
             self.node_coords = node_coords
             self.local_map_graph = graph_edges
             self.node_utility = node_utility
             self.guidepost = guidepost
         except Exception:
-            logger.debug(f"Robot init: initial generate_graph failed for R{getattr(self,'robot_id',-1)}", exc_info=True)
+            logger.debug(f"Robot init: initial rebuild_graph_structure failed for R{getattr(self,'robot_id',-1)}", exc_info=True)
 
         self.target_gived_by_server = False
         self.last_position_in_server_range = start_position
