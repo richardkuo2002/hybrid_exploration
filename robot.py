@@ -204,8 +204,39 @@ class Robot():
 
         # --- 4. 更新節點圖 (間歇性) ---
         self.graph_update_counter += 1
-        if self.graph_update_counter % GRAPH_UPDATE_INTERVAL == 0:
-            logger.debug(f"[R{self.robot_id} Awareness] Rebuilding graph structure...")
+        # 首先嘗試每步做輕量級的 node utility 更新，並把 graph.edges 回寫到 local_map_graph
+        logger.debug(f"[R{self.robot_id} Awareness] Attempting lightweight update_node_utilities...")
+        try:
+            node_utility, guidepost = self.graph_generator.update_node_utilities(
+                self.local_map, new_frontiers, self.frontiers
+            )
+            self.node_utility = node_utility
+            self.guidepost = guidepost
+            if hasattr(self.graph_generator, 'graph') and hasattr(self.graph_generator.graph, 'edges'):
+                # 如果 generator 持有 graph.edges，就把它同步回 robot 端，供 local path planning 使用
+                try:
+                    if isinstance(self.graph_generator.graph.edges, dict) and len(self.graph_generator.graph.edges) > 0:
+                        self.local_map_graph = self.graph_generator.graph.edges
+                    else:
+                        # 若 graph.edges 空，保留現狀，稍後判斷是否需要重建
+                        pass
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.error(f"Robot {self.robot_id} failed update_node_utilities: {e}", exc_info=True)
+
+        # 若 local_map_graph 缺失或為空，則在間隔到達時執行一次重建（避免每步重建造成高昂代價）
+        need_local_rebuild = False
+        try:
+            if self.local_map_graph is None:
+                need_local_rebuild = True
+            elif isinstance(self.local_map_graph, dict) and len(self.local_map_graph) == 0:
+                need_local_rebuild = True
+        except Exception:
+            need_local_rebuild = True
+
+        if need_local_rebuild and (self.graph_update_counter % GRAPH_UPDATE_INTERVAL == 0):
+            logger.debug(f"[R{self.robot_id} Awareness] local_map_graph missing/empty -> performing local rebuild...")
             try:
                 node_coords, graph_edges, node_utility, guidepost = self.graph_generator.rebuild_graph_structure(
                     self.local_map, new_frontiers, self.frontiers, self.position
@@ -216,18 +247,6 @@ class Robot():
                 self.guidepost = guidepost
             except Exception as e:
                 logger.error(f"Robot {self.robot_id} failed rebuild_graph_structure: {e}", exc_info=True)
-        else:
-            logger.debug(f"[R{self.robot_id} Awareness] Updating node utilities...")
-            try:
-                node_utility, guidepost = self.graph_generator.update_node_utilities(
-                    self.local_map, new_frontiers, self.frontiers
-                )
-                self.node_utility = node_utility
-                self.guidepost = guidepost
-                if hasattr(self.graph_generator, 'graph') and hasattr(self.graph_generator.graph, 'edges'):
-                    self.local_map_graph = self.graph_generator.graph.edges
-            except Exception as e:
-                logger.error(f"Robot {self.robot_id} failed update_node_utilities: {e}", exc_info=True)
 
         self.frontiers = new_frontiers
 
