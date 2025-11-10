@@ -45,6 +45,19 @@ class Robot():
         if start_position is not None:
             self.graph_generator.route_node.append(start_position)
 
+        # Create an initial local graph so robots have candidates even when out of server range
+        try:
+            empty_frontiers = np.array([]).reshape(0, 2)
+            node_coords, graph_edges, node_utility, guidepost = self.graph_generator.generate_graph(
+                self.position, self.local_map, empty_frontiers
+            )
+            self.node_coords = node_coords
+            self.local_map_graph = graph_edges
+            self.node_utility = node_utility
+            self.guidepost = guidepost
+        except Exception:
+            logger.debug(f"Robot init: initial generate_graph failed for R{getattr(self,'robot_id',-1)}", exc_info=True)
+
         self.target_gived_by_server = False
         self.last_position_in_server_range = start_position
         self.out_range_step = 0
@@ -432,11 +445,35 @@ class Robot():
         """
         if not hasattr(self.graph_generator, 'target_candidates') or self.graph_generator.target_candidates is None:
             logger.debug(f"[R{self.robot_id} SelectNode] graph_generator.target_candidates is None!")
+            # Diagnostic: report local graph status
+            try:
+                gcoords_len = len(self.node_coords) if self.node_coords is not None else 0
+            except Exception:
+                gcoords_len = -1
+            try:
+                local_graph_empty = isinstance(self.local_map_graph, dict) and len(self.local_map_graph) == 0
+            except Exception:
+                local_graph_empty = True
+            logger.debug(f"[Diag robot R{self.robot_id}] node_coords_len={gcoords_len} local_map_graph_empty={local_graph_empty}")
             return self.position, 0, 0
         candidates = self.graph_generator.target_candidates
         num_candidates = len(candidates)
         if num_candidates == 0:
             logger.debug(f"[R{self.robot_id} SelectNode] No candidates.")
+            # Diagnostic: echo graph_generator state
+            try:
+                gcoords_len = len(self.graph_generator.node_coords) if hasattr(self.graph_generator, 'node_coords') and self.graph_generator.node_coords is not None else 0
+            except Exception:
+                gcoords_len = -1
+            try:
+                targ_len = len(self.graph_generator.target_candidates) if hasattr(self.graph_generator, 'target_candidates') and self.graph_generator.target_candidates is not None else 0
+            except Exception:
+                targ_len = -1
+            try:
+                util_len = len(self.graph_generator.candidates_utility) if hasattr(self.graph_generator, 'candidates_utility') and self.graph_generator.candidates_utility is not None else 0
+            except Exception:
+                util_len = -1
+            logger.debug(f"[Diag robot R{self.robot_id}] gen_node_coords_len={gcoords_len} gen_target_candidates_len={targ_len} gen_candidates_utility_len={util_len}")
             return self.position, 0, 0
         if not hasattr(self.graph_generator, 'candidates_utility') or self.graph_generator.candidates_utility is None or len(self.graph_generator.candidates_utility) != num_candidates:
             logger.error(f"[R{self.robot_id} SelectNode] Mismatch/missing candidates_utility!")
