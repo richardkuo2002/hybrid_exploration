@@ -133,19 +133,27 @@ class Robot():
                 i_have_server_task = self.target_gived_by_server and not self.is_returning
                 other_is_returning = other_robot.is_returning
 
-                if i_am_returning and other_has_server_task:
-                    logger.info(f"[R{self.robot_id} Handoff] I am returning, taking task from R{other_robot.robot_id}. R{other_robot.robot_id} is now returning.")
-                    # 我 (A) 接收 B 的任務
-                    # 使用深拷貝以避免共享參考
-                    self.target_pos = copy.deepcopy(other_robot.target_pos)
-                    self.planned_path = copy.deepcopy(other_robot.planned_path)
-                    self.target_gived_by_server = True
+                # 當自己正在回去時，無論對方是否有 server 任務，都改成讓對方回去，自己接手對方原本要做的事
+                if i_am_returning and not other_is_returning:
+                    logger.info(f"[R{self.robot_id} Handoff] I am returning; swap roles with R{other_robot.robot_id}. R{other_robot.robot_id} will return; I will take its task.")
+                    # self 接手 other 的原始任務（深拷貝以避免共享參考）
+                    try:
+                        self.target_pos = copy.deepcopy(other_robot.target_pos)
+                        self.planned_path = copy.deepcopy(other_robot.planned_path)
+                        # preserve whether the task was server-given for the receiver
+                        self.target_gived_by_server = bool(getattr(other_robot, 'target_gived_by_server', False))
+                    except Exception:
+                        logger.exception(f"[R{self.robot_id} Handoff] Failed to copy task from R{other_robot.robot_id}")
+                    # self 停止返回（因為要去執行對方的任務）
                     self.is_returning = False
                     self.return_replan_attempts = 0
                     self.return_fail_cooldown = 0
 
-                    # B 接收我的返回任務
-                    other_robot.target_pos = copy.deepcopy(self.last_position_in_server_range)
+                    # other 改為回到其 last_position_in_server_range
+                    try:
+                        other_robot.target_pos = copy.deepcopy(other_robot.last_position_in_server_range)
+                    except Exception:
+                        other_robot.target_pos = copy.deepcopy(getattr(other_robot, 'last_position_in_server_range', None))
                     other_robot.planned_path = []
                     other_robot.is_returning = True
                     other_robot.target_gived_by_server = False
