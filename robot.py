@@ -138,8 +138,9 @@ class Robot():
                     logger.info(f"[R{self.robot_id} Handoff] I am returning; swap roles with R{other_robot.robot_id}. R{other_robot.robot_id} will return; I will take its task.")
                     # self 接手 other 的原始任務（深拷貝以避免共享參考）
                     try:
+                        # 只複製目標位置，讓接手方自己重規劃路徑以避免使用過時的 planned_path
                         self.target_pos = copy.deepcopy(other_robot.target_pos)
-                        self.planned_path = copy.deepcopy(other_robot.planned_path)
+                        self.planned_path = []
                         # preserve whether the task was server-given for the receiver
                         self.target_gived_by_server = bool(getattr(other_robot, 'target_gived_by_server', False))
                     except Exception:
@@ -167,7 +168,7 @@ class Robot():
                     logger.info(f"[R{self.robot_id} Handoff] I am departing, giving task to R{other_robot.robot_id}. I am now returning.")
                     # 深拷貝原始任務，避免後續修改造成共享
                     my_original_target = copy.deepcopy(self.target_pos)
-                    my_original_path = copy.deepcopy(self.planned_path)
+                    # 只複製目標位置即可，讓接手方自行 replan
                     # 我 (B) 接收 A 的返回任務
                     self.target_pos = copy.deepcopy(other_robot.last_position_in_server_range)
                     self.planned_path = []
@@ -176,7 +177,7 @@ class Robot():
                     self.return_replan_attempts = 0
                     # A 接收我 (B) 的原始任務（拷貝）
                     other_robot.target_pos = my_original_target
-                    other_robot.planned_path = my_original_path
+                    other_robot.planned_path = []
                     other_robot.target_gived_by_server = True
                     other_robot.is_returning = False
                     other_robot.return_replan_attempts = 0
