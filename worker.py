@@ -81,6 +81,18 @@ class Worker:
                     num_targets = len(robot.graph_generator.target_candidates)
                 msg_cnt += f"| R{i} targets: {num_targets} "
 
+            # Debug: 印出目前每台機器人的位置 (在 server 更新之前)
+            positions_debug = []
+            for i, robot in enumerate(self.env.robot_list):
+                try:
+                    if robot.position is None:
+                        positions_debug.append(f"R{i}:None")
+                    else:
+                        positions_debug.append(f"R{i}:{robot.position.tolist()}")
+                except Exception:
+                    positions_debug.append(f"R{i}:ERR")
+            logger.debug("[Debug] Robot Positions: %s", ", ".join(positions_debug))
+
             # ... (階段二：伺服器集中調度) ...
             try:
                 done, coverage = self.env.server.update_and_assign_tasks(
@@ -156,10 +168,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # Default: only show ERROR and CRITICAL to reduce log noise.
-    # If --debug is provided, show INFO (and WARNING) as well. If you
-    # need DEBUG-level logs, re-run with --debug and set environment
-    # variable WORKER_DEBUG=1 to enable lower-level logs (optional).
-    log_level = logging.INFO if args.debug else logging.ERROR
+    # If --debug is provided, enable DEBUG so we can print per-step robot positions.
+    log_level = logging.DEBUG if args.debug else logging.ERROR
     logging.basicConfig(level=log_level, format='%(asctime)s %(levelname)-8s [%(name)s] %(message)s', datefmt='%H:%M:%S')
 
     logger.info(f"Starting worker with Map Index: {args.TEST_MAP_INDEX}, Agent Num: {args.TEST_AGENT_NUM}, Plot: {args.plot}, Save Video: {args.save_video}")
