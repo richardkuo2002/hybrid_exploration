@@ -81,7 +81,7 @@ class Graph_generator:
         self._update_guidepost()
         return self.node_coords, self.graph.edges, self.node_utility, self.guidepost
 
-    def update_node_utilities(self, robot_map, frontiers, old_frontiers, all_robot_positions=None):
+    def update_node_utilities(self, robot_map, frontiers, old_frontiers, all_robot_positions=None, caller=None):
         """輕量級更新節點效用（不重建整個圖）。
 
         Args:
@@ -93,7 +93,7 @@ class Graph_generator:
         Returns:
             tuple: (node_utility (ndarray), guidepost)
         """
-        logger.debug("Updating node utilities...")
+        logger.debug(f"Updating node utilities... caller={caller}")
         # Diagnostic: report current sizes (temporary)
         try:
             coords_len = len(self.node_coords) if hasattr(self, 'node_coords') and self.node_coords is not None else 0
@@ -107,7 +107,7 @@ class Graph_generator:
             util_len = len(self.candidates_utility) if hasattr(self, 'candidates_utility') and self.candidates_utility is not None else 0
         except Exception:
             util_len = -1
-        logger.debug(f"[Diag graph] node_coords_len={coords_len} target_candidates_len={targ_len} candidates_utility_len={util_len}")
+        logger.debug(f"[Diag graph] caller={caller} node_coords_len={coords_len} target_candidates_len={targ_len} candidates_utility_len={util_len}")
         current_frontiers = frontiers if frontiers is not None else np.array([]).reshape(0, 2)
         current_old_frontiers = old_frontiers if old_frontiers is not None else np.array([]).reshape(0, 2)
         self._update_nodes_and_utilities(current_frontiers, robot_map, old_frontiers=current_old_frontiers, all_robot_positions=all_robot_positions)

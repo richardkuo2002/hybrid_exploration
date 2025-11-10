@@ -113,7 +113,7 @@ class Server():
             logger.debug(f"[Server Step] Updating node utilities (lightweight)... Frontier change count={frontier_change_count}")
             try:
                 node_utility, guidepost = self.graph_generator.update_node_utilities(
-                    self.global_map, new_frontiers, self.frontiers, self.all_robot_position
+                    self.global_map, new_frontiers, self.frontiers, self.all_robot_position, caller='server'
                 )
                 # 只更新這兩個
                 self.node_utility = node_utility

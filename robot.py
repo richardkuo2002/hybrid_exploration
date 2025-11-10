@@ -222,7 +222,7 @@ class Robot():
         logger.debug(f"[R{self.robot_id} Awareness] Attempting lightweight update_node_utilities...")
         try:
             node_utility, guidepost = self.graph_generator.update_node_utilities(
-                self.local_map, new_frontiers, self.frontiers
+                self.local_map, new_frontiers, self.frontiers, caller=f'robot-{getattr(self, "robot_id", -1)}'
             )
             self.node_utility = node_utility
             self.guidepost = guidepost
@@ -256,6 +256,11 @@ class Robot():
                         logger.debug(f"[R{self.robot_id} Awareness] Fallback: copied {len(self.graph_generator.target_candidates)} candidates from server.")
                     except Exception:
                         logger.exception(f"[R{self.robot_id} Awareness] Fallback copy from server failed.")
+                    # Focused warning if robot's lightweight update produced zero candidates while server has candidates
+                    try:
+                        logger.warning(f"[R{self.robot_id} Awareness] MISMATCH: robot candidates=0 but server candidates={len(server_cands)}. Fallback applied.")
+                    except Exception:
+                        pass
         except Exception:
             logger.exception(f"[R{self.robot_id} Awareness] Error in fallback candidate sync.")
 
