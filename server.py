@@ -63,10 +63,27 @@ class Server():
 
         # --- 間歇性更新 ---
         self.graph_update_counter += 1
+        # decide whether to do a full rebuild: if interval hit OR frontier change count large
+        try:
+            old_frontier_set = set(map(tuple, self.frontiers)) if self.frontiers is not None else set()
+            new_frontier_set = set(map(tuple, new_frontiers)) if new_frontiers is not None else set()
+            frontier_change_count = len(old_frontier_set.symmetric_difference(new_frontier_set))
+        except Exception:
+            frontier_change_count = 0
+
+        need_rebuild = False
         if self.graph_update_counter % GRAPH_UPDATE_INTERVAL == 0:
-            logger.debug(f"[Server Step] Rebuilding graph structure (expensive)...")
+            need_rebuild = True
+            logger.debug(f"[Server Step] GRAPH_UPDATE_INTERVAL reached -> scheduling full rebuild.")
+        elif frontier_change_count >= FRONTIER_REBUILD_THRESHOLD:
+            need_rebuild = True
+            logger.debug(f"[Server Step] Frontier change count {frontier_change_count} >= threshold {FRONTIER_REBUILD_THRESHOLD} -> scheduling full rebuild.")
+
+        if need_rebuild:
+            logger.debug(f"[Server Step] Rebuilding graph structure (expensive)... Frontier change count={frontier_change_count}")
+            import time as _time
+            t0 = _time.time()
             try:
-                # <--- 使用 rebuild_graph_structure ---
                 node_coords, graph_edges, node_utility, guidepost = self.graph_generator.rebuild_graph_structure(
                     self.global_map, new_frontiers, self.frontiers, self.position, self.all_robot_position
                 )
@@ -76,10 +93,24 @@ class Server():
                 self.guidepost = guidepost
             except Exception as e:
                  logger.error(f"[Server Step] Failed rebuild_graph_structure: {e}", exc_info=True)
+            finally:
+                t1 = _time.time()
+                elapsed = t1 - t0
+                logger.info(f"[Server Step] Full rebuild took {elapsed:.3f}s")
+                # record last rebuild info for external measurement
+                try:
+                    self.last_rebuild_time = elapsed
+                    self.last_rebuild_step = self.graph_update_counter
+                except Exception:
+                    pass
         else:
-            logger.debug(f"[Server Step] Updating node utilities (lightweight)...")
+            # clear last_rebuild_time to indicate no full rebuild this step
             try:
-                # <--- 使用 update_node_utilities ---
+                self.last_rebuild_time = None
+            except Exception:
+                pass
+            logger.debug(f"[Server Step] Updating node utilities (lightweight)... Frontier change count={frontier_change_count}")
+            try:
                 node_utility, guidepost = self.graph_generator.update_node_utilities(
                     self.global_map, new_frontiers, self.frontiers, self.all_robot_position
                 )

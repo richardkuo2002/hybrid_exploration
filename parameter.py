@@ -27,3 +27,5 @@ UTILITY_CALC_RANGE=40
 GLOBAL_NODES_TO_FRONTIER_AVOID_SPARSE_RAD=120
 # 當感測到連續 obstacle 時，達到此值才視為真正阻斷（obstacle thickness）
 OBSTACLE_THICKNESS = 10
+# 當 frontier 變化數量超過此門檻時，才觸發完整 rebuild（預設較保守）
+FRONTIER_REBUILD_THRESHOLD = 50
