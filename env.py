@@ -37,18 +37,18 @@ class Env():
         self.map_list.sort()
         self.map_list = [f for f in self.map_list if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
         if not self.map_list:
-             logger.critical(f"No valid map files found in {self.map_path}. Exiting.")
-             sys.exit(1)
+            logger.critical(f"No valid map files found in {self.map_path}. Exiting.")
+            sys.exit(1)
 
         self.map_index = map_index % len(self.map_list)
         self.file_path = self.map_list[self.map_index]
         logger.info(f"Using map index {self.map_index}: {self.file_path}")
 
         try:
-             self.real_map, self.start_position = self.import_map_revised(os.path.join(self.map_path, self.file_path))
+            self.real_map, self.start_position = self.import_map_revised(os.path.join(self.map_path, self.file_path))
         except Exception as e:
-             logger.critical(f"Failed loading map: {os.path.join(self.map_path, self.file_path)}. Error: {e}", exc_info=True)
-             raise
+            logger.critical(f"Failed loading map: {os.path.join(self.map_path, self.file_path)}. Error: {e}", exc_info=True)
+            raise
 
         self.real_map_size = np.shape(self.real_map)
         self.force_sync_debug = force_sync_debug
@@ -101,12 +101,12 @@ class Env():
                 robot.downsampled_map = block_reduce(robot.local_map.copy(), block_size=(self.resolution, self.resolution), func=np.min)
                 robot.frontiers = self.find_frontier(robot.downsampled_map)
                 if hasattr(robot, 'graph_generator') and robot.graph_generator is not None:
-                     valid_frontiers = robot.frontiers if robot.frontiers is not None else np.array([]).reshape(0,2)
-                     node_coords, graph, node_utility, guidepost = robot.graph_generator.generate_graph(self.start_position, robot.local_map, valid_frontiers)
-                     robot.node_coords = node_coords
-                     robot.local_map_graph = graph
-                     robot.node_utility = node_utility
-                     robot.guidepost = guidepost
+                    valid_frontiers = robot.frontiers if robot.frontiers is not None else np.array([]).reshape(0,2)
+                    node_coords, graph, node_utility, guidepost = robot.graph_generator.generate_graph(self.start_position, robot.local_map, valid_frontiers)
+                    robot.node_coords = node_coords
+                    robot.local_map_graph = graph
+                    robot.node_utility = node_utility
+                    robot.guidepost = guidepost
                 else: logger.error(f"Robot {i} failed graph_generator init.")
                 self.robot_list.append(robot)
                 if hasattr(self.server, 'all_robot_position') and hasattr(self.server, 'robot_in_range') and i < len(self.server.all_robot_position):
@@ -114,7 +114,7 @@ class Env():
                     self.server.robot_in_range[i] = True
                 else: logger.error("Server list attributes missing or index out of bounds during robot init!")
             except Exception as e:
-                 logger.error(f"Failed init Robot {i}: {e}", exc_info=True)
+                logger.error(f"Failed init Robot {i}: {e}", exc_info=True)
         
         maps_to_merge = [robot.local_map for robot in self.robot_list] + [self.server.global_map]
         merged = self.merge_maps(maps_to_merge)
@@ -140,7 +140,7 @@ class Env():
                 self.server.update_and_assign_tasks(self.robot_list, self.real_map, self.find_frontier)
             else: logger.warning("No robots initialized, skip initial server update.")
         except Exception as e:
-             logger.critical(f"Initial server update failed: {e}", exc_info=True); raise
+            logger.critical(f"Initial server update failed: {e}", exc_info=True); raise
 
     # ... (calculate_coverage_ratio, merge_maps, update_robot_local_map, find_frontier 不變) ...
     def calculate_coverage_ratio(self):
@@ -190,8 +190,8 @@ class Env():
             ndarray: 更新後的 local map（若發生例外則回傳原本的 local_map）。
         """
         try:
-             updated_map = sensor_work(robot_position, sensor_range, robot_local_map, real_map)
-             return updated_map if isinstance(updated_map, np.ndarray) else robot_local_map
+            updated_map = sensor_work(robot_position, sensor_range, robot_local_map, real_map)
+            return updated_map if isinstance(updated_map, np.ndarray) else robot_local_map
         except Exception as e: logger.error(f"Error sensor_work @ {robot_position}: {e}", exc_info=True); return robot_local_map
     def find_frontier(self, downsampled_map):
         """找出 downsampled_map 的 frontier 點。
@@ -239,8 +239,8 @@ class Env():
             final_map = np.ones_like(map_img_int, dtype=np.uint8) * 1
             final_map[map_img_int > 150] = 255
             if start_location is not None:
-                 y, x = start_location[1], start_location[0]
-                 if 0 <= y < final_map.shape[0] and 0 <= x < final_map.shape[1]: final_map[y, x] = 255
+                y, x = start_location[1], start_location[0]
+                if 0 <= y < final_map.shape[0] and 0 <= x < final_map.shape[1]: final_map[y, x] = 255
             free_ratio = np.sum(final_map == 255) / final_map.size
             logger.debug(f"Loaded {os.path.basename(map_path)}. Shape:{final_map.shape}. Free:{free_ratio:.2f}")
             if free_ratio < 0.01: logger.warning(f"Map {os.path.basename(map_path)} has very little free space ({free_ratio*100:.1f}%).")
