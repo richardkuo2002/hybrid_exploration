@@ -98,7 +98,3 @@ python worker.py --TEST_MAP_INDEX 1 --TEST_AGENT_NUM 3 --no-save_video
 ## 批次測試
 
 若要批次執行多張地圖或多次實驗，請參考 `driver.py` 中的範例/註解，或修改 `worker.py` 以接受外部參數與輸出結果到指定目錄。
-
----
-
-若要我把 README 再微調為英文版本、或加入快速參考指令樣板（Makefile / scripts/），我可以接著建立分支與額外檔案。
