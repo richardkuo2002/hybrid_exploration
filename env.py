@@ -102,7 +102,7 @@ class Env():
                 robot.frontiers = self.find_frontier(robot.downsampled_map)
                 if hasattr(robot, 'graph_generator') and robot.graph_generator is not None:
                     valid_frontiers = robot.frontiers if robot.frontiers is not None else np.array([]).reshape(0,2)
-                    node_coords, graph, node_utility, guidepost = robot.graph_generator.generate_graph(self.start_position, robot.local_map, valid_frontiers)
+                    node_coords, graph, node_utility, guidepost = robot.graph_generator.generate_graph(robot_start, robot.local_map, valid_frontiers)
                     robot.node_coords = node_coords
                     robot.local_map_graph = graph
                     robot.node_utility = node_utility

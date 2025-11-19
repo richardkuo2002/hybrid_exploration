@@ -57,9 +57,9 @@ class Graph_generator:
         self.edge_clear_all_nodes()
         free_area = self.free_area(robot_map)
         if len(free_area) == 0: # 如果一開始就沒有自由空間
-             logger.warning("No free area found in initial map for graph generation.")
-             self.node_coords = np.array(robot_location).reshape(1, 2) # 至少包含起始點
-             self.graph = Graph(); self.graph.add_node(tuple(robot_location)) # 空圖
+            logger.warning("No free area found in initial map for graph generation.")
+            self.node_coords = np.array(robot_location).reshape(1, 2) # 至少包含起始點
+            self.graph = Graph(); self.graph.add_node(tuple(robot_location)) # 空圖
         else:
             free_area_complex = free_area[:, 0] + free_area[:, 1] * 1j
             uniform_points_complex = self.uniform_points[:, 0] + self.uniform_points[:, 1] * 1j
@@ -73,8 +73,8 @@ class Graph_generator:
         if len(self.node_coords) > 0:
             self.find_k_neighbor_all_nodes(robot_map, update_dense=True)
         else:
-             logger.warning("No nodes generated in generate_graph.")
-             self.graph = Graph()
+            logger.warning("No nodes generated in generate_graph.")
+            self.graph = Graph()
 
         current_frontiers = frontiers if frontiers is not None else np.array([]).reshape(0, 2)
         self._update_nodes_and_utilities(current_frontiers, robot_map, old_frontiers=None, all_robot_positions=None)
@@ -171,7 +171,7 @@ class Graph_generator:
         if len(self.node_coords) > 0:
             self.find_k_neighbor_all_nodes(robot_map, update_dense=True)
         else:
-             logger.warning("No nodes available in rebuild_graph_structure.")
+            logger.warning("No nodes available in rebuild_graph_structure.")
 
         # 7. 重建後立即更新效益
         current_old_frontiers = old_frontiers if old_frontiers is not None else np.array([]).reshape(0, 2)
@@ -221,17 +221,17 @@ class Graph_generator:
 
         # 更新效益
         for node in self.nodes_list:
-             if hasattr(node, 'update_observable_frontiers'):
-                 # 檢查傳入的 new_frontiers_only 是否有效
-                 valid_new_frontiers = new_frontiers_only if isinstance(new_frontiers_only, np.ndarray) and new_frontiers_only.ndim == 2 else np.array([]).reshape(0,2)
-                 node.update_observable_frontiers(observed_frontiers_set, valid_new_frontiers, robot_map)
+            if hasattr(node, 'update_observable_frontiers'):
+                # 檢查傳入的 new_frontiers_only 是否有效
+                valid_new_frontiers = new_frontiers_only if isinstance(new_frontiers_only, np.ndarray) and new_frontiers_only.ndim == 2 else np.array([]).reshape(0,2)
+                node.update_observable_frontiers(observed_frontiers_set, valid_new_frontiers, robot_map)
 
         # 處理佔用
         if all_robot_positions is not None:
             for robot_pos in all_robot_positions:
                 if robot_pos is not None:
                     for node in self.nodes_list:
-                         if hasattr(node, 'coords'):
+                        if hasattr(node, 'coords'):
                             dist = np.linalg.norm(node.coords - robot_pos)
                             if dist < 10: node.set_visited()
 
@@ -384,7 +384,7 @@ class Graph_generator:
                             topk_indices = np.argsort(filtered_dist)[:num_global_neighbours]
                             topk_global_graph_nodes = set(map(tuple, filtered_nodes[topk_indices]))
                 except Exception as e:
-                     logger.warning(f"Error processing global graph edges for {p_tuple}: {e}")
+                    logger.warning(f"Error processing global graph edges for {p_tuple}: {e}")
 
             for neighbour_node in topk_global_graph_nodes:
                 self.graph.add_node(p_tuple)
