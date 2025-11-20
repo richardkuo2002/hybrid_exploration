@@ -13,7 +13,7 @@ import copy
 logger = logging.getLogger(__name__)
 
 class Server():
-    def __init__(self, start_position, real_map_size, resolution, k_size, plot=False, force_sync_debug=False): # removed debug
+    def __init__(self, start_position, real_map_size, resolution, k_size, plot=False, force_sync_debug=False, graph_update_interval=None): # removed debug
         """初始化 Server，管理全域地圖與任務分派狀態。
 
         Args:
@@ -42,6 +42,9 @@ class Server():
         self.guidepost = None
         self.resolution = resolution
         self.graph_update_counter = 0 # Re-added counter
+        # graph update interval: if not provided, fallback to parameter default
+        from parameter import GRAPH_UPDATE_INTERVAL as DEFAULT_GRAPH_UPDATE_INTERVAL
+        self.graph_update_interval = graph_update_interval if graph_update_interval is not None else DEFAULT_GRAPH_UPDATE_INTERVAL
         self.force_sync_debug = force_sync_debug
 
     def update_and_assign_tasks(self, robot_list, real_map, find_frontier_func):
@@ -74,7 +77,7 @@ class Server():
             frontier_change_count = 0
 
         need_rebuild = False
-        if self.graph_update_counter % GRAPH_UPDATE_INTERVAL == 0:
+        if self.graph_update_counter % self.graph_update_interval == 0:
             need_rebuild = True
             logger.debug(f"[Server Step] GRAPH_UPDATE_INTERVAL reached -> scheduling full rebuild.")
         elif frontier_change_count >= FRONTIER_REBUILD_THRESHOLD:

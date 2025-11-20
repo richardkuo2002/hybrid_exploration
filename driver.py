@@ -6,10 +6,12 @@ import matplotlib
 matplotlib.use('Agg')  # 若不想跳出視窗，使用無GUI後端
 import matplotlib.pyplot as plt
 import logging
+import argparse
+import argparse
 
 from worker import Worker
 
-def run_batch(n_runs=100, map_max_index=1000, agent_min=3, agent_max=5, seed=None):
+def run_batch(n_runs=100, map_max_index=1000, agent_min=3, agent_max=5, seed=None, graph_update_interval=None):
     """
     跑多次實驗並回傳每次 finished_ep 列表
     """
@@ -29,7 +31,7 @@ def run_batch(n_runs=100, map_max_index=1000, agent_min=3, agent_max=5, seed=Non
         agent_num = random.randint(agent_min, agent_max)  # 3~5（含上下界）
         map_index = random.randint(0, map_max_index)   # 0~map_max_index（含上下界）
         # 若需要固定測資以便重現，可手動啟用： map_index = i+1
-        worker = Worker(global_step=0, agent_num=agent_num, map_index=map_index, save_video=False)
+        worker = Worker(global_step=0, agent_num=agent_num, map_index=map_index, save_video=False, graph_update_interval=graph_update_interval)
         t_start = time.perf_counter()
         success, finished_ep = worker.run_episode(curr_episode=i+1)
         t_end = time.perf_counter()
@@ -194,7 +196,16 @@ def save_results_csv(finished_eps, successes, agent_used, map_indices, durations
 
 if __name__ == '__main__':
     # 參數可自行調整
-    N_RUNS = 100
+    parser = argparse.ArgumentParser(description='Batch runner for hybrid_exploration')
+    parser.add_argument('--graph-update-interval', '-g', type=int, default=None, help='Graph full rebuild interval (override parameter.GRAPH_UPDATE_INTERVAL)')
+    parser.add_argument('--n-runs', type=int, default=100, help='Number of runs for batch')
+    parser.add_argument('--map-max-index', type=int, default=10000, help='Maximum map index')
+    parser.add_argument('--agent-min', type=int, default=3, help='Minimum number of agents')
+    parser.add_argument('--agent-max', type=int, default=3, help='Maximum number of agents')
+    parser.add_argument('--seed', type=int, default=42, help='Random seed (default: 42)')
+    args = parser.parse_args()
+
+    N_RUNS = args.n_runs
     MAP_MAX_INDEX = 10000
     AGENT_MIN = 3
     AGENT_MAX = 3
@@ -203,10 +214,11 @@ if __name__ == '__main__':
 
     finished_eps, successes, agent_used, map_indices, durations = run_batch(
         n_runs=N_RUNS,
-        map_max_index=MAP_MAX_INDEX,
-        agent_min=AGENT_MIN,
-        agent_max=AGENT_MAX,
-        seed=SEED
+        map_max_index=args.map_max_index if hasattr(args, 'map_max_index') else MAP_MAX_INDEX,
+        agent_min=args.agent_min if hasattr(args, 'agent_min') else AGENT_MIN,
+        agent_max=args.agent_max if hasattr(args, 'agent_max') else AGENT_MAX,
+        seed=args.seed if hasattr(args, 'seed') else SEED,
+        graph_update_interval=args.graph_update_interval
     )
     
     save_results_csv(finished_eps, successes, agent_used, map_indices, durations)

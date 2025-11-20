@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class Robot():
-    def __init__(self, start_position, real_map_size, resolution, k_size, plot=False):
+    def __init__(self, start_position, real_map_size, resolution, k_size, plot=False, graph_update_interval=None):
         """初始化 Robot。
 
         Args:
@@ -73,6 +73,8 @@ class Robot():
         self.last_explored_area = 0
 
         self.graph_update_counter = 0
+        from parameter import GRAPH_UPDATE_INTERVAL as DEFAULT_GRAPH_UPDATE_INTERVAL
+        self.graph_update_interval = graph_update_interval if graph_update_interval is not None else DEFAULT_GRAPH_UPDATE_INTERVAL
 
         self.robot_id = -1
         self.is_returning = False
@@ -301,7 +303,7 @@ class Robot():
         # 原先僅在 local_map_graph 缺失或為空時才重建；應用者要求 robots 端也每步更新一次
         #（當 GRAPH_UPDATE_INTERVAL == 1 則每步皆會重建）。此處改為每隔 GRAPH_UPDATE_INTERVAL 步嘗試重建。
         try:
-            if (self.graph_update_counter % GRAPH_UPDATE_INTERVAL) == 0:
+            if (self.graph_update_counter % self.graph_update_interval) == 0:
                 logger.debug(f"[R{self.robot_id} Awareness] Scheduled local rebuild (counter={self.graph_update_counter})...")
                 try:
                     node_coords, graph_edges, node_utility, guidepost = self.graph_generator.rebuild_graph_structure(

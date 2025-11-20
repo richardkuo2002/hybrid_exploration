@@ -14,7 +14,7 @@ from env import Env
 logger = logging.getLogger(__name__)
 
 class Worker:
-    def __init__(self, global_step=0, agent_num=3, map_index=0, plot=False, save_video=True, force_sync_debug=False):
+    def __init__(self, global_step=0, agent_num=3, map_index=0, plot=False, save_video=True, force_sync_debug=False, graph_update_interval=None):
         """建立 Worker 實例，初始化環境與機器人位置。
 
         Args:
@@ -30,7 +30,7 @@ class Worker:
         self.global_step = global_step
         self.agent_num = agent_num
         self.k_size = K_SIZE
-        self.env = Env(self.agent_num, map_index=map_index, k_size=self.k_size, plot=plot, force_sync_debug=force_sync_debug)
+        self.env = Env(self.agent_num, map_index=map_index, k_size=self.k_size, plot=plot, force_sync_debug=force_sync_debug, graph_update_interval=graph_update_interval)
         self.step_count = 0
         self.plot = plot
         self.save_video = save_video
@@ -166,6 +166,7 @@ if __name__ == '__main__':
     parser.add_argument('--save_video', action=argparse.BooleanOptionalAction, default=True, help='Save video (default: True)')
     parser.add_argument('--debug', action='store_true', help='Enable debug/info level logging (default: show only ERROR/CRITICAL)')
     parser.add_argument('--force_sync_debug', action='store_true', help='(debug) force server to sync candidates/frontiers to all robots each step')
+    parser.add_argument('--graph-update-interval', '-g', type=int, default=None, help='Graph full rebuild interval override')
     args = parser.parse_args()
 
     # Default: only show ERROR and CRITICAL to reduce log noise.
@@ -183,6 +184,7 @@ if __name__ == '__main__':
             plot=args.plot,
             save_video=args.save_video,
             force_sync_debug=args.force_sync_debug,
+            graph_update_interval=args.graph_update_interval,
         )
         success, steps = worker.run_episode(curr_episode=0)
         logger.info(f'Episode finished: {success} in {steps} steps.')
