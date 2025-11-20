@@ -135,7 +135,7 @@ def _sensor_collision_check_wrapper(x0_f, y0_f, x1_f, y1_f, real_map, local_map_
             # 若為 free，且當前 belief 非 obstacle，則標為 free
             if k == PIXEL_FREE:
                 if local_map_copy[y, x] != 1:
-                    local_map_copy[y, x] = 255
+                        local_map_copy[y, x] = PIXEL_FREE
         # 碰到未知區域也可能需要停止，取決於感測器模型
         # if k == PIXEL_UNKNOWN:
         #    break

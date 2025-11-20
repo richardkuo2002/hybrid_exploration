@@ -42,17 +42,19 @@ def test_deep_copy_handoff():
         return []
 
     # Create a fake server with minimal attributes
+    from parameter import PIXEL_UNKNOWN
     class S:
         def __init__(self):
             self.position = np.array([0,0])
-            self.global_map = np.ones((20,20))*127
+            self.global_map = np.ones((20,20))*PIXEL_UNKNOWN
             self.all_robot_position = [None, None]
             self.robot_in_range = [False, False]
 
     server = S()
 
     # prepare a simple real_map to satisfy sensor_work's expectations
-    real_map = np.ones((20,20), dtype=np.uint8) * 127
+    from parameter import PIXEL_UNKNOWN
+    real_map = np.ones((20,20), dtype=np.uint8) * PIXEL_UNKNOWN
     # run awareness: should trigger handoff (r0 takes r1's task)
     r0.update_local_awareness(real_map=real_map, all_robots=all_robots, server=server, find_frontier_func=noop_frontier, merge_maps_func=noop_merge)
 

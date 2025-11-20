@@ -162,7 +162,8 @@ class Env():
         Returns:
             ndarray: 合併後的地圖。
         """
-        merged_map = np.ones_like(self.real_map) * 127
+        from parameter import PIXEL_UNKNOWN
+        merged_map = np.ones_like(self.real_map) * PIXEL_UNKNOWN
         valid_maps = [m for m in maps_to_merge if isinstance(m, np.ndarray)]
         if not valid_maps:
             return merged_map
@@ -177,8 +178,10 @@ class Env():
             any_obs |= (belief == PIXEL_OCCUPIED)
             any_free |= (belief == PIXEL_FREE)
 
-        merged_map[any_free] = 255
-        merged_map[any_obs] = 1
+        from parameter import PIXEL_FREE
+        merged_map[any_free] = PIXEL_FREE
+        from parameter import PIXEL_OCCUPIED
+        merged_map[any_obs] = PIXEL_OCCUPIED
         return merged_map
     def update_robot_local_map(self, robot_position, sensor_range, robot_local_map, real_map):
         """呼叫 sensor_work 更新機器人的 local map。
@@ -242,10 +245,12 @@ class Env():
                 logger.warning(f"Start pos (208) not found in {os.path.basename(map_path)}. Using default [100, 100].")
                 start_location = np.array([100, 100])
             final_map = np.ones_like(map_img_int, dtype=np.uint8) * 1
-            final_map[map_img_int > 150] = 255
+            from parameter import PIXEL_FREE
+            final_map[map_img_int > 150] = PIXEL_FREE
             if start_location is not None:
                 y, x = start_location[1], start_location[0]
-                if 0 <= y < final_map.shape[0] and 0 <= x < final_map.shape[1]: final_map[y, x] = 255
+                from parameter import PIXEL_FREE
+                if 0 <= y < final_map.shape[0] and 0 <= x < final_map.shape[1]: final_map[y, x] = PIXEL_FREE
             from parameter import PIXEL_FREE
             free_ratio = np.sum(final_map == PIXEL_FREE) / final_map.size
             logger.debug(f"Loaded {os.path.basename(map_path)}. Shape:{final_map.shape}. Free:{free_ratio:.2f}")

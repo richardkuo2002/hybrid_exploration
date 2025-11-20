@@ -27,7 +27,8 @@ class Server():
             None
         """
         self.position = start_position
-        self.global_map = np.ones(real_map_size) * 127
+        from parameter import PIXEL_UNKNOWN
+        self.global_map = np.ones(real_map_size) * PIXEL_UNKNOWN
         self.downsampled_map = None
         self.comm_range = SERVER_COMM_RANGE
         self.all_robot_position = []

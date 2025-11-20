@@ -28,7 +28,8 @@ class Robot():
             None
         """
         self.position = start_position
-        self.local_map = np.ones(real_map_size) * 127
+        from parameter import PIXEL_UNKNOWN
+        self.local_map = np.ones(real_map_size) * PIXEL_UNKNOWN
         self.downsampled_map = None
         self.sensor_range = SENSOR_RANGE
         self.frontiers = []
