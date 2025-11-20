@@ -6,7 +6,7 @@
 import numpy as np
 import copy
 from numba import jit # <--- 1. 匯入 jit
-from parameter import OBSTACLE_THICKNESS
+from parameter import OBSTACLE_THICKNESS, PIXEL_FREE, PIXEL_OCCUPIED, PIXEL_UNKNOWN
 # 假設 collision_check 已經在 utils.py 中被 @jit 修飾
 from utils import check_collision # 確保從 utils 匯入的是 JIT 版本
 
@@ -121,7 +121,7 @@ def _sensor_collision_check_wrapper(x0_f, y0_f, x1_f, y1_f, real_map, local_map_
 
         k = real_map[y, x] # 使用標準索引
         # 更新 local map 並應用 obstacle-thickness 行為
-        if k == 1:
+        if k == PIXEL_OCCUPIED:
             # 標記為 obstacle
             local_map_copy[y, x] = 1
             collision_flag += 1
@@ -133,11 +133,11 @@ def _sensor_collision_check_wrapper(x0_f, y0_f, x1_f, y1_f, real_map, local_map_
             if collision_flag > 0:
                 break
             # 若為 free，且當前 belief 非 obstacle，則標為 free
-            if k == 255:
+            if k == PIXEL_FREE:
                 if local_map_copy[y, x] != 1:
                     local_map_copy[y, x] = 255
         # 碰到未知區域也可能需要停止，取決於感測器模型
-        # if k == 127:
+        # if k == PIXEL_UNKNOWN:
         #    break
 
         # 到達終點

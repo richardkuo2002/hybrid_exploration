@@ -68,18 +68,19 @@ class Env():
         def find_nearest_free(xc, yc, max_search=8):
             # deterministic neighborhood search (increasing Manhattan radius)
             h, w = self.real_map.shape
-            if 0 <= xc < w and 0 <= yc < h and self.real_map[yc, xc] == 255:
+            from parameter import PIXEL_FREE
+            if 0 <= xc < w and 0 <= yc < h and self.real_map[yc, xc] == PIXEL_FREE:
                 return np.array([xc, yc])
             for r in range(1, max_search+1):
                 for dx in range(-r, r+1):
                     for dy in (-r, r):
                         nx, ny = xc + dx, yc + dy
-                        if 0 <= nx < w and 0 <= ny < h and self.real_map[ny, nx] == 255:
+                        if 0 <= nx < w and 0 <= ny < h and self.real_map[ny, nx] == PIXEL_FREE:
                             return np.array([nx, ny])
                 for dy in range(-r+1, r):
                     for dx in (-r, r):
                         nx, ny = xc + dx, yc + dy
-                        if 0 <= nx < w and 0 <= ny < h and self.real_map[ny, nx] == 255:
+                        if 0 <= nx < w and 0 <= ny < h and self.real_map[ny, nx] == PIXEL_FREE:
                             return np.array([nx, ny])
             return None
 
@@ -149,7 +150,8 @@ class Env():
         Returns:
             float: 覆蓋率 (0-1)。
         """
-        explored_pixels = np.sum(self.server.global_map == 255); total_free_pixels = np.sum(self.real_map == 255)
+        from parameter import PIXEL_FREE
+        explored_pixels = np.sum(self.server.global_map == PIXEL_FREE); total_free_pixels = np.sum(self.real_map == PIXEL_FREE)
         return min(explored_pixels / total_free_pixels, 1.0) if total_free_pixels > 0 else 0.0
     def merge_maps(self, maps_to_merge):
         """合併多張信念地圖，優先考慮障礙與可通行。
@@ -171,8 +173,9 @@ class Env():
         any_obs = np.zeros_like(self.real_map, dtype=bool)
         any_free = np.zeros_like(self.real_map, dtype=bool)
         for belief in valid_maps:
-            any_obs |= (belief == 1)
-            any_free |= (belief == 255)
+            from parameter import PIXEL_OCCUPIED, PIXEL_FREE
+            any_obs |= (belief == PIXEL_OCCUPIED)
+            any_free |= (belief == PIXEL_FREE)
 
         merged_map[any_free] = 255
         merged_map[any_obs] = 1
@@ -204,11 +207,13 @@ class Env():
         """
         try:
             if downsampled_map is None or downsampled_map.ndim != 2: return np.array([]).reshape(0, 2)
-            y_len, x_len = downsampled_map.shape[:2]; mapping = (downsampled_map == 127).astype(np.int8)
+            from parameter import PIXEL_UNKNOWN
+            y_len, x_len = downsampled_map.shape[:2]; mapping = (downsampled_map == PIXEL_UNKNOWN).astype(np.int8)
             mapping = np.pad(mapping, 1, 'constant', constant_values=0)
             fro_map = mapping[2:, 1:-1] + mapping[:-2, 1:-1] + mapping[1:-1, 2:] + mapping[1:-1, :-2] + \
                       mapping[:-2, 2:] + mapping[2:, :-2] + mapping[2:, 2:] + mapping[:-2, :-2]
-            belief = downsampled_map; is_free = (belief == 255); is_frontier_neighbor = (fro_map > 0) & (fro_map < 8)
+            from parameter import PIXEL_FREE
+            belief = downsampled_map; is_free = (belief == PIXEL_FREE); is_frontier_neighbor = (fro_map > 0) & (fro_map < 8)
             frontier_mask = is_free & is_frontier_neighbor; ind_to = np.where(frontier_mask.ravel(order='F'))[0]
             if ind_to.size == 0: return np.array([]).reshape(0, 2)
             rows, cols = np.indices((y_len, x_len)); points = np.stack([cols.ravel(order='F'), rows.ravel(order='F')], axis=-1)
@@ -241,7 +246,8 @@ class Env():
             if start_location is not None:
                 y, x = start_location[1], start_location[0]
                 if 0 <= y < final_map.shape[0] and 0 <= x < final_map.shape[1]: final_map[y, x] = 255
-            free_ratio = np.sum(final_map == 255) / final_map.size
+            from parameter import PIXEL_FREE
+            free_ratio = np.sum(final_map == PIXEL_FREE) / final_map.size
             logger.debug(f"Loaded {os.path.basename(map_path)}. Shape:{final_map.shape}. Free:{free_ratio:.2f}")
             if free_ratio < 0.01: logger.warning(f"Map {os.path.basename(map_path)} has very little free space ({free_ratio*100:.1f}%).")
             return final_map, start_location

@@ -8,7 +8,7 @@ MAX_EPS_STEPS=196
 K_SIZE = 30
 
 # --- 修改點：加回圖更新間隔 ---
-GRAPH_UPDATE_INTERVAL = 1  # 每 1 步重建圖結構（測試是否改善 coverage 與同步性）
+GRAPH_UPDATE_INTERVAL = 2  # 每 2 步重建圖結構（原本為 1，改為 2 以減少重建頻率）
 # -----------------------------
 
 # --- 智慧會合機制參數 ---
@@ -29,6 +29,11 @@ GLOBAL_NODES_TO_FRONTIER_AVOID_SPARSE_RAD=120
 OBSTACLE_THICKNESS = 10
 # 當 frontier 變化數量超過此門檻時，才觸發完整 rebuild（預設較保守）
 FRONTIER_REBUILD_THRESHOLD = 50
+
+# --- Pixel semantics ---
+PIXEL_FREE = 255
+PIXEL_UNKNOWN = 127
+PIXEL_OCCUPIED = 1
 
 # 選點策略參數：在選點時對 utility 與 distance 做正規化並以權重合併
 # 0..1 的值，越靠近 1 表示越偏好效用（utility），越靠近 0 表示越偏好距離

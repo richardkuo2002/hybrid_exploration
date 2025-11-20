@@ -169,7 +169,8 @@ class Server():
         # --- 檢查探索完成 ---
         # ... (邏輯不變) ...
         total_frontiers = len(self.frontiers) if self.frontiers is not None else 0
-        total_free = np.sum(real_map == 255); explored = np.sum(self.global_map == 255)
+        from parameter import PIXEL_FREE
+        total_free = np.sum(real_map == PIXEL_FREE); explored = np.sum(self.global_map == PIXEL_FREE)
         coverage = explored / total_free if total_free > 0 else 0.0
         done = (total_frontiers == 0) or (coverage >= 0.95)
         if not robots_need_assignment: logger.debug("[Server Step] No robots need assignment."); return done, coverage
@@ -358,6 +359,7 @@ class Server():
         Returns:
             float: 覆蓋率（0.0 到 1.0）。
         """
-        explored_pixels = np.sum(self.global_map == 255)
-        total_free_pixels = np.sum(real_map == 255)
+        from parameter import PIXEL_FREE
+        explored_pixels = np.sum(self.global_map == PIXEL_FREE)
+        total_free_pixels = np.sum(real_map == PIXEL_FREE)
         return min(explored_pixels / total_free_pixels, 1.0) if total_free_pixels > 0 else 0.0

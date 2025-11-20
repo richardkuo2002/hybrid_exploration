@@ -55,6 +55,7 @@ class Graph_generator:
             tuple: (node_coords (ndarray), graph_edges (dict), node_utility (ndarray), guidepost)
         """
         self.edge_clear_all_nodes()
+        from parameter import PIXEL_FREE
         free_area = self.free_area(robot_map)
         if len(free_area) == 0: # 如果一開始就沒有自由空間
             logger.warning("No free area found in initial map for graph generation.")
@@ -326,7 +327,8 @@ class Graph_generator:
         Returns:
             ndarray: free pixels 座標 (N,2)。
         """
-        index = np.where(robot_map == 255); free = np.asarray([index[1], index[0]]).T
+        from parameter import PIXEL_FREE
+        index = np.where(robot_map == PIXEL_FREE); free = np.asarray([index[1], index[0]]).T
         return free
 
     def find_closest_index_from_coords(self, node_coords, p):

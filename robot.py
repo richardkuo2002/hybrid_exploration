@@ -213,7 +213,8 @@ class Robot():
                 server.robot_in_range[self.robot_id] = False
 
         # --- 2. 計算地圖增益 ---
-        current_explored_area = np.sum(self.local_map == 255)
+        from parameter import PIXEL_FREE
+        current_explored_area = np.sum(self.local_map == PIXEL_FREE)
         self.current_info_gain = current_explored_area - self.last_explored_area
         self.last_explored_area = current_explored_area
         if not self.is_in_server_range and not self.target_gived_by_server and not self.is_returning:

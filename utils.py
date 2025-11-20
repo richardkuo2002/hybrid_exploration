@@ -1,5 +1,6 @@
 import numpy as np
 from numba import jit # <--- 1. 匯入 numba
+from parameter import PIXEL_OCCUPIED, PIXEL_UNKNOWN
 
 @jit(nopython=True) # <--- 2. 加上 JIT 裝飾器
 def check_collision(start, end, robot_map):
@@ -34,10 +35,10 @@ def check_collision(start, end, robot_map):
         k = map[int(y), int(x)] # <--- 3. 將 .item() 改成標準索引
         if x == x1 and y == y1:
             break
-        if k == 1:
+        if k == PIXEL_OCCUPIED:
             collision = True
             break
-        if k == 127:
+        if k == PIXEL_UNKNOWN:
             collision = True
             break
         if error > 0:
