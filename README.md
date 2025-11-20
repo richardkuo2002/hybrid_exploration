@@ -64,6 +64,20 @@ python worker.py
 python worker.py --TEST_MAP_INDEX 1 --TEST_AGENT_NUM 3 --no-save_video
 ```
 
+CLI 參數（新增）：
+
+- `--graph-update-interval` (`-g`): 覆蓋 `parameter.py` 中預設的 `GRAPH_UPDATE_INTERVAL` 設定（用於控制伺服器與機器人何時執行完整圖重建）。
+
+  範例：
+
+  - `python worker.py --graph-update-interval 5`  -> 每 5 步重建一次（若未指定，使用 `parameter.py` 預設）。
+  - `python driver.py --n-runs 10 --graph-update-interval 4` -> 在批次執行時每次實驗使用重建間隔 4。
+
+  說明：
+
+  - 若 CLI 中未指定 `--graph-update-interval`，系統會使用 `parameter.py` 中 `GRAPH_UPDATE_INTERVAL` 預設值（目前默認為 2）。
+  - 在 `Worker -> Env -> Server -> Robot` 的建構流程中，這個旗標會被傳遞下去並代替預設值（但不會修改 `parameter.py` 檔案本身）。
+
 ## 影片輸出與緩衝行為
 
 - 若安裝 `opencv-python` 並可成功開啟 `cv2.VideoWriter`，程式會在執行期間直接串流寫入臨時 mp4 檔（通常較省記憶體），並在 `Env.save_video()` 被呼叫時將該臨時檔移至最終檔名。
