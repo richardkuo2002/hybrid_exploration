@@ -210,7 +210,8 @@ class Graph_generator:
         # 1. 計算新節點座標
         free_area = self.free_area(robot_map)
         if len(free_area) == 0:
-            logger.warning("No free area found during rebuild.")
+            # This is an informative message — not an error. Lower severity to DEBUG to avoid cluttering batch run logs.
+            logger.debug("No free area found during rebuild.")
             new_node_coords = np.array(position).reshape(1, 2)  # 至少包含當前位置
         else:
             free_area_complex = free_area[:, 0] + free_area[:, 1] * 1j
