@@ -1,7 +1,10 @@
 import unittest
+
 import numpy as np
+
 from node import Node
-from parameter import PIXEL_FREE, PIXEL_UNKNOWN, PIXEL_OCCUPIED
+from parameter import PIXEL_FREE, PIXEL_OCCUPIED, PIXEL_UNKNOWN
+
 
 class TestNode(unittest.TestCase):
     def setUp(self):
@@ -25,14 +28,17 @@ class TestNode(unittest.TestCase):
     def test_update_observable_frontiers(self):
         # Mock observed frontiers
         observed_frontiers = set()
-        new_frontiers = np.array([[2, 2]]) # One frontier remains
-        
+        new_frontiers = np.array([[2, 2]])  # One frontier remains
+
         # Update
-        self.node.update_observable_frontiers(observed_frontiers, new_frontiers, self.map)
-        
+        self.node.update_observable_frontiers(
+            observed_frontiers, new_frontiers, self.map
+        )
+
         # Check if frontiers list is updated (logic depends on visibility check in Node)
         # Since map is all UNKNOWN, visibility might be limited, but let's check basic attributes
         self.assertIsNotNone(self.node.observable_frontiers_list)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

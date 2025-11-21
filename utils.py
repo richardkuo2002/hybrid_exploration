@@ -1,8 +1,10 @@
 import numpy as np
-from numba import jit # <--- 1. 匯入 numba
+from numba import jit  # <--- 1. 匯入 numba
+
 from parameter import PIXEL_OCCUPIED, PIXEL_UNKNOWN
 
-@jit(nopython=True) # <--- 2. 加上 JIT 裝飾器
+
+@jit(nopython=True)  # <--- 2. 加上 JIT 裝飾器
 def check_collision(start: np.ndarray, end: np.ndarray, robot_map: np.ndarray) -> bool:
     """檢查從 start 到 end 的線段是否與地圖中的障礙或未知區域發生碰撞 (Bresenham)。
 
@@ -15,7 +17,7 @@ def check_collision(start: np.ndarray, end: np.ndarray, robot_map: np.ndarray) -
         bool: 若路徑上有碰撞（遇到障礙或未知）則回傳 True，否則 False。
     """
     collision = False
-    map = robot_map 
+    map = robot_map
 
     x0 = start[0]
     y0 = start[1]
@@ -32,7 +34,7 @@ def check_collision(start: np.ndarray, end: np.ndarray, robot_map: np.ndarray) -
 
     while 0 <= x < map.shape[1] and 0 <= y < map.shape[0]:
         # .item() 在 nopython=True 中可能不支持，改成標準索引
-        k = map[int(y), int(x)] # <--- 3. 將 .item() 改成標準索引
+        k = map[int(y), int(x)]  # <--- 3. 將 .item() 改成標準索引
         if x == x1 and y == y1:
             break
         if k == PIXEL_OCCUPIED:

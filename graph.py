@@ -5,17 +5,19 @@
 #######################################################################
 
 import sys
+from collections import deque
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
+
+import numpy as np
 
 from parameter import *
 
-import numpy as np
-from collections import deque
-from typing import List, Tuple, Optional, Set, Dict, Any, Union
 
 class Edge:
     def __init__(self, to_node: Tuple[int, int], length: float) -> None:
         self.to_node = to_node
         self.length = length
+
 
 class Graph:
     def __init__(self) -> None:
@@ -33,7 +35,9 @@ class Graph:
         """
         self.nodes.add(node)
 
-    def add_edge(self, from_node: Tuple[int, int], to_node: Tuple[int, int], length: float) -> None:
+    def add_edge(
+        self, from_node: Tuple[int, int], to_node: Tuple[int, int], length: float
+    ) -> None:
         """在圖中加入一條有向邊（若必要會建立 from_node 的 edge dict）。
 
         Args:
@@ -53,7 +57,9 @@ class Graph:
 
         from_node_edges[to_node] = edge
 
-    def clear_edge(self, from_node: Tuple[int, int], remove_bidirectional_edges: bool = False) -> None:
+    def clear_edge(
+        self, from_node: Tuple[int, int], remove_bidirectional_edges: bool = False
+    ) -> None:
         """清除指定節點的所有出邊；可選同時移除其他節點指向該節點的邊。
 
         Args:
@@ -67,11 +73,13 @@ class Graph:
             for to_node in list(self.edges.keys()):
                 if from_node in self.edges[to_node]:
                     del self.edges[to_node][from_node]
-        
+
         if from_node in self.edges:
             self.edges[from_node] = dict()
 
-    def clear_node(self, node: Tuple[int, int], remove_bidirectional_edges: bool = False) -> None:
+    def clear_node(
+        self, node: Tuple[int, int], remove_bidirectional_edges: bool = False
+    ) -> None:
         """從圖中移除節點（同時清除其出邊），可選同時移除其他節點指向該節點的邊。
 
         Args:
@@ -87,8 +95,11 @@ class Graph:
         if node in self.nodes:
             self.nodes.remove(node)
 
-
-    def is_connected_bfs(self, start_node: Tuple[int, int], criteria: Optional[Set[Tuple[int, int]]] = None) -> Tuple[bool, List[Tuple[int, int]]]:
+    def is_connected_bfs(
+        self,
+        start_node: Tuple[int, int],
+        criteria: Optional[Set[Tuple[int, int]]] = None,
+    ) -> Tuple[bool, List[Tuple[int, int]]]:
         """使用廣度優先搜尋檢查圖的連通性。
 
         若 criteria 為 None，檢查整個圖是否連通（所有節點皆可到達）。
@@ -124,14 +135,16 @@ class Graph:
             criteria_bounded = criteria.intersection(set(map(tuple, self.nodes)))
 
         if criteria is None:
-            is_connected = (len(visited) == len(self.nodes))
+            is_connected = len(visited) == len(self.nodes)
         else:
             is_connected = criteria_bounded.issubset(visited)
         return is_connected, list(visited)
 
 
-
-def h(index: Union[Tuple[int, int], np.ndarray], destination: Union[Tuple[int, int], np.ndarray]) -> float:
+def h(
+    index: Union[Tuple[int, int], np.ndarray],
+    destination: Union[Tuple[int, int], np.ndarray],
+) -> float:
     """A* 使用的啟發式函式（歐式距離）。
 
     Args:
@@ -143,11 +156,16 @@ def h(index: Union[Tuple[int, int], np.ndarray], destination: Union[Tuple[int, i
     """
     current = np.array(index)
     end = np.array(destination)
-    h = np.linalg.norm(end-current)
+    h = np.linalg.norm(end - current)
     return h
 
 
-def a_star(start: Tuple[int, int], destination: Tuple[int, int], graph: Graph) -> Tuple[Optional[List[Tuple[int, int]]], float, Set[Tuple[int, int]], Tuple[List[Tuple[int, int]], List[Tuple[int, int]]]]:    
+def a_star(start: Tuple[int, int], destination: Tuple[int, int], graph: Graph) -> Tuple[
+    Optional[List[Tuple[int, int]]],
+    float,
+    Set[Tuple[int, int]],
+    Tuple[List[Tuple[int, int]], List[Tuple[int, int]]],
+]:
     """A* 最短路徑搜尋。
 
     Args:
@@ -166,19 +184,22 @@ def a_star(start: Tuple[int, int], destination: Tuple[int, int], graph: Graph) -
         無：函式會在找不到路徑時回傳 None 並以大成本表示失敗。
     """
     if start == destination:
-        return [], 0, set([]), ([],[])
-    if tuple(start) in graph.edges and tuple(destination) in graph.edges[tuple(start)].keys():
+        return [], 0, set([]), ([], [])
+    if (
+        tuple(start) in graph.edges
+        and tuple(destination) in graph.edges[tuple(start)].keys()
+    ):
         cost = graph.edges[tuple(start)][tuple(destination)].length
-        return [start, destination], cost, set([]), ([],[])
+        return [start, destination], cost, set([]), ([], [])
     open_list = {start}
     closed_list = set([])
-    edges_explored_list = ([],[])
+    edges_explored_list = ([], [])
 
     g = {start: 0}
     parents = {start: start}
 
-    while len(open_list) > 0:       
-        n = None        # current node with lowest f cost
+    while len(open_list) > 0:
+        n = None  # current node with lowest f cost
         h_n = 1e5
 
         # Choose vertex with next lowest f cost
@@ -225,6 +246,6 @@ def a_star(start: Tuple[int, int], destination: Tuple[int, int], graph: Graph) -
 
         open_list.remove(n)
         closed_list.add(n)
-    
+
     # print('[2] Path does not exist!')
     return None, 1e5, closed_list, edges_explored_list

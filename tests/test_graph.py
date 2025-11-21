@@ -1,6 +1,8 @@
-import unittest
 import math
+import unittest
+
 from graph import Graph, a_star
+
 
 class TestGraph(unittest.TestCase):
     def setUp(self):
@@ -11,7 +13,7 @@ class TestGraph(unittest.TestCase):
         #   1            1
         #   v            v
         # (0,1) --1--> (1,1)
-        
+
         self.n00 = (0, 0)
         self.n10 = (1, 0)
         self.n20 = (2, 0)
@@ -61,5 +63,6 @@ class TestGraph(unittest.TestCase):
         self.assertIsNone(path)
         self.assertEqual(cost, 1e5)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

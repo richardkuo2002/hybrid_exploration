@@ -1,14 +1,17 @@
 import unittest
+
 import numpy as np
+
 from parameter import PIXEL_FREE, PIXEL_OCCUPIED
 from utils import check_collision
+
 
 class TestUtils(unittest.TestCase):
     def setUp(self):
         # Create a simple 10x10 map
         self.map_size = (10, 10)
         self.map = np.full(self.map_size, PIXEL_FREE, dtype=int)
-        
+
         # Add an obstacle in the middle
         self.map[5, 5] = PIXEL_OCCUPIED
 
@@ -35,5 +38,6 @@ class TestUtils(unittest.TestCase):
         end = np.array([2, 2])
         self.assertFalse(check_collision(start, end, self.map))
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

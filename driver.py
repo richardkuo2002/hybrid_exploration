@@ -1,19 +1,25 @@
-import time
 import random
+import time
+
+import matplotlib
 import numpy as np
 import pandas as pd
-import matplotlib
-matplotlib.use('Agg')  # 若不想跳出視窗，使用無GUI後端
-import matplotlib.pyplot as plt
-import logging
+
+matplotlib.use("Agg")  # 若不想跳出視窗，使用無GUI後端
 import argparse
+import logging
 import multiprocessing
 from functools import partial
-from typing import List, Tuple, Optional, Dict, Any, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+import matplotlib.pyplot as plt
 
 from worker import Worker
 
-def run_single_experiment(args_tuple: Tuple[int, int, int, Optional[int]]) -> Dict[str, Any]:
+
+def run_single_experiment(
+    args_tuple: Tuple[int, int, int, Optional[int]],
+) -> Dict[str, Any]:
     """
     執行單次實驗的頂層函式，供 multiprocessing 調用。
     Args:
@@ -22,18 +28,24 @@ def run_single_experiment(args_tuple: Tuple[int, int, int, Optional[int]]) -> Di
         dict: 實驗結果
     """
     run_index, agent_num, map_index, graph_update_interval = args_tuple
-    
+
     # 每個 process 需有獨立的隨機狀態，雖然 multiprocessing 會自動處理，
     # 但為了保險起見，可以根據 run_index 再次 re-seed (選擇性)
     # np.random.seed((run_index + 1) * 12345 % 2**32)
     # random.seed((run_index + 1) * 67890 % 2**32)
 
-    worker = Worker(global_step=0, agent_num=agent_num, map_index=map_index, save_video=False, graph_update_interval=graph_update_interval)
-    
+    worker = Worker(
+        global_step=0,
+        agent_num=agent_num,
+        map_index=map_index,
+        save_video=False,
+        graph_update_interval=graph_update_interval,
+    )
+
     t_start = time.perf_counter()
-    success, finished_ep = worker.run_episode(curr_episode=run_index+1)
+    success, finished_ep = worker.run_episode(curr_episode=run_index + 1)
     t_end = time.perf_counter()
-    
+
     dur = t_end - t_start
 
     # 處理 finished_ep 格式
@@ -51,10 +63,18 @@ def run_single_experiment(args_tuple: Tuple[int, int, int, Optional[int]]) -> Di
         "map_index": map_index,
         "success": bool(success),
         "finished_ep": finished_ep_scalar,
-        "duration": dur
+        "duration": dur,
     }
 
-def run_batch(n_runs: int = 100, map_max_index: int = 1000, agent_min: int = 3, agent_max: int = 5, seed: Optional[int] = None, graph_update_interval: Optional[int] = None) -> Tuple[List[Any], List[bool], List[int], List[int], List[float]]:
+
+def run_batch(
+    n_runs: int = 100,
+    map_max_index: int = 1000,
+    agent_min: int = 3,
+    agent_max: int = 5,
+    seed: Optional[int] = None,
+    graph_update_interval: Optional[int] = None,
+) -> Tuple[List[Any], List[bool], List[int], List[int], List[float]]:
     """
     跑多次實驗並回傳每次 finished_ep 列表 (平行化版本)
     """
@@ -77,7 +97,9 @@ def run_batch(n_runs: int = 100, map_max_index: int = 1000, agent_min: int = 3, 
 
     # 偵測 CPU 核心數，保留一顆核心給系統
     num_processes = max(1, multiprocessing.cpu_count() - 1)
-    print(f"Starting batch run with {n_runs} episodes using {num_processes} processes...")
+    print(
+        f"Starting batch run with {n_runs} episodes using {num_processes} processes..."
+    )
 
     t0 = time.perf_counter()
 
@@ -87,26 +109,43 @@ def run_batch(n_runs: int = 100, map_max_index: int = 1000, agent_min: int = 3, 
         results = []
         for i, res in enumerate(pool.imap_unordered(run_single_experiment, tasks)):
             results.append(res)
-            print(f"[{i+1}/{n_runs}] agents={res['agent_num']}, map={res['map_index']} -> success={res['success']}, finished_ep={res['finished_ep']}, time={res['duration']:.3f}s")
+            print(
+                f"[{i+1}/{n_runs}] agents={res['agent_num']}, map={res['map_index']} -> success={res['success']}, finished_ep={res['finished_ep']}, time={res['duration']:.3f}s"
+            )
 
     # 整理結果 (依 run_index 排序回原本順序，雖然統計上沒差，但為了對齊)
-    results.sort(key=lambda x: x['run_index'])
+    results.sort(key=lambda x: x["run_index"])
 
     for res in results:
-        finished_eps.append(res['finished_ep'])
-        successes.append(res['success'])
-        agent_used.append(res['agent_num'])
-        map_indices.append(res['map_index'])
-        durations.append(res['duration'])
+        finished_eps.append(res["finished_ep"])
+        successes.append(res["success"])
+        agent_used.append(res["agent_num"])
+        map_indices.append(res["map_index"])
+        durations.append(res["duration"])
 
     total_time = time.perf_counter() - t0
     print(f"Batch run completed in {total_time:.2f}s")
 
-    save_and_viz_results(finished_eps, successes, agent_used, map_indices, durations, csv_path="results1.csv")
+    save_and_viz_results(
+        finished_eps,
+        successes,
+        agent_used,
+        map_indices,
+        durations,
+        csv_path="results1.csv",
+    )
 
     return finished_eps, successes, agent_used, map_indices, durations
 
-def save_and_viz_results(finished_eps: List[Any], successes: List[bool], agent_used: List[int], map_indices: List[int], durations: List[float], csv_path: str = "results1.csv") -> Tuple[pd.DataFrame, pd.DataFrame]:
+
+def save_and_viz_results(
+    finished_eps: List[Any],
+    successes: List[bool],
+    agent_used: List[int],
+    map_indices: List[int],
+    durations: List[float],
+    csv_path: str = "results1.csv",
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     將每次實驗指標存成 CSV，並計算按 map_index 奇偶分組的摘要統計：
       - finished_ep（中位數、平均）
@@ -115,29 +154,34 @@ def save_and_viz_results(finished_eps: List[Any], successes: List[bool], agent_u
     回傳資料表與摘要表；箱形圖建議在互動式環境繪製。
     """
     # finished_eps 應為 scalar list（run_batch 已轉換）。若不是，上面方法也能容忍處理。
-    df = pd.DataFrame({
-        'finished_ep': finished_eps,
-        'success': successes,
-        'agent_used': agent_used,
-        'map_index': map_indices,
-        'duration': durations,
-    })
+    df = pd.DataFrame(
+        {
+            "finished_ep": finished_eps,
+            "success": successes,
+            "agent_used": agent_used,
+            "map_index": map_indices,
+            "duration": durations,
+        }
+    )
 
-    df['parity'] = np.where(df['map_index'] % 2 == 0, 'even', 'odd')
+    df["parity"] = np.where(df["map_index"] % 2 == 0, "even", "odd")
     # 避免除以 0（或 NaN），以 NaN 代表不可計算
-    df['duration_per_ep'] = df['duration'] / df['finished_ep'].replace({0: np.nan})
+    df["duration_per_ep"] = df["duration"] / df["finished_ep"].replace({0: np.nan})
 
     # 輸出 CSV
     df.to_csv(csv_path, index=False)
 
     # 摘要統計
-    summary = df.groupby('parity').agg({
-        'finished_ep': ['count', 'median', 'mean'],
-        'duration': ['median', 'mean'],
-        'duration_per_ep': ['median', 'mean']
-    })
+    summary = df.groupby("parity").agg(
+        {
+            "finished_ep": ["count", "median", "mean"],
+            "duration": ["median", "mean"],
+            "duration_per_ep": ["median", "mean"],
+        }
+    )
 
     return df, summary
+
 
 def plot_boxplots_finished_duration(
     finished_eps: List[Any],
@@ -145,7 +189,7 @@ def plot_boxplots_finished_duration(
     output_png: str = "finished_duration_boxplots.png",
     title: str = "Finished EP, Duration, and Duration per EP",
     skip_zero_finished: bool = True,
-    show_mean: bool = True
+    show_mean: bool = True,
 ) -> None:
     """
     畫出三個箱形圖：
@@ -162,11 +206,17 @@ def plot_boxplots_finished_duration(
         show_mean (bool): 箱形圖是否顯示平均值。
     """
     # 轉為 ndarray 並做長度/數值檢查（若 element 為 list/tuple，取最後一項）
-    fe = np.array([
-        (fe[-1] if isinstance(fe, (list, tuple, np.ndarray)) and len(fe) > 0
-         else (fe if isinstance(fe, (int, float)) else np.nan))
-        for fe in finished_eps
-    ], dtype=float)
+    fe = np.array(
+        [
+            (
+                fe[-1]
+                if isinstance(fe, (list, tuple, np.ndarray)) and len(fe) > 0
+                else (fe if isinstance(fe, (int, float)) else np.nan)
+            )
+            for fe in finished_eps
+        ],
+        dtype=float,
+    )
     du = np.asarray(durations, dtype=float)
 
     if fe.size == 0 or du.size == 0 or fe.size != du.size:
@@ -179,7 +229,7 @@ def plot_boxplots_finished_duration(
         du_per_ep = du[mask] / fe[mask] if mask.any() else np.array([])
     else:
         # 對 0 做安全處理：以 NaN 代表不可除
-        with np.errstate(divide='ignore', invalid='ignore'):
+        with np.errstate(divide="ignore", invalid="ignore"):
             du_per_ep = du / fe
             du_per_ep = du_per_ep[np.isfinite(du_per_ep)]
 
@@ -202,22 +252,18 @@ def plot_boxplots_finished_duration(
     fig, ax = plt.subplots(figsize=(8, 5))
 
     bp = ax.boxplot(
-        valid_data,
-        vert=True,
-        patch_artist=True,
-        showmeans=show_mean,
-        meanline=True
+        valid_data, vert=True, patch_artist=True, showmeans=show_mean, meanline=True
     )
 
     # 美化外觀
-    colors = ['#73a9ff', '#9fdc6c', '#f7a072']
-    for i, box in enumerate(bp['boxes']):
-        box.set(facecolor=colors[i % len(colors)], alpha=0.6, edgecolor='#444')
-    for median in bp['medians']:
-        median.set(color='#d62728', linewidth=2.0)
-    if show_mean and 'means' in bp:
-        for mean in bp['means']:
-            mean.set(color='#2ca02c', linewidth=2.0)
+    colors = ["#73a9ff", "#9fdc6c", "#f7a072"]
+    for i, box in enumerate(bp["boxes"]):
+        box.set(facecolor=colors[i % len(colors)], alpha=0.6, edgecolor="#444")
+    for median in bp["medians"]:
+        median.set(color="#d62728", linewidth=2.0)
+    if show_mean and "means" in bp:
+        for mean in bp["means"]:
+            mean.set(color="#2ca02c", linewidth=2.0)
 
     ax.set_title(title)
     ax.set_ylabel("value")
@@ -225,33 +271,59 @@ def plot_boxplots_finished_duration(
     ax.set_xticklabels(valid_labels, rotation=0)
 
     # 輔助線與版面
-    ax.grid(axis='y', linestyle='--', alpha=0.4)
+    ax.grid(axis="y", linestyle="--", alpha=0.4)
     fig.tight_layout()
-    fig.savefig(output_png, dpi=150, bbox_inches='tight')
+    fig.savefig(output_png, dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"Boxplot saved to {output_png}")
 
-def save_results_csv(finished_eps: List[Any], successes: List[bool], agent_used: List[int], map_indices: List[int], durations: List[float], filename: str = "results.csv") -> None:
-    df = pd.DataFrame({
-        "finished_ep": finished_eps,
-        "success": successes,
-        "agent_num": agent_used,
-        "map_index": map_indices,
-        "duration_s": durations
-    })
+
+def save_results_csv(
+    finished_eps: List[Any],
+    successes: List[bool],
+    agent_used: List[int],
+    map_indices: List[int],
+    durations: List[float],
+    filename: str = "results.csv",
+) -> None:
+    df = pd.DataFrame(
+        {
+            "finished_ep": finished_eps,
+            "success": successes,
+            "agent_num": agent_used,
+            "map_index": map_indices,
+            "duration_s": durations,
+        }
+    )
     df.to_csv(filename, index=False)
     print(f"Saved CSV to {filename}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # 參數可自行調整
-    parser = argparse.ArgumentParser(description='Batch runner for hybrid_exploration')
-    parser.add_argument('--graph-update-interval', '-g', type=int, default=None, help='Graph full rebuild interval (override parameter.GRAPH_UPDATE_INTERVAL)')
-    parser.add_argument('--n-runs', type=int, default=100, help='Number of runs for batch')
-    parser.add_argument('--map-max-index', type=int, default=10000, help='Maximum map index')
-    parser.add_argument('--agent-min', type=int, default=3, help='Minimum number of agents')
-    parser.add_argument('--agent-max', type=int, default=3, help='Maximum number of agents')
-    parser.add_argument('--seed', type=int, default=42, help='Random seed (default: 42)')
+    parser = argparse.ArgumentParser(description="Batch runner for hybrid_exploration")
+    parser.add_argument(
+        "--graph-update-interval",
+        "-g",
+        type=int,
+        default=None,
+        help="Graph full rebuild interval (override parameter.GRAPH_UPDATE_INTERVAL)",
+    )
+    parser.add_argument(
+        "--n-runs", type=int, default=100, help="Number of runs for batch"
+    )
+    parser.add_argument(
+        "--map-max-index", type=int, default=10000, help="Maximum map index"
+    )
+    parser.add_argument(
+        "--agent-min", type=int, default=3, help="Minimum number of agents"
+    )
+    parser.add_argument(
+        "--agent-max", type=int, default=3, help="Maximum number of agents"
+    )
+    parser.add_argument(
+        "--seed", type=int, default=42, help="Random seed (default: 42)"
+    )
     args = parser.parse_args()
 
     N_RUNS = args.n_runs
@@ -263,20 +335,24 @@ if __name__ == '__main__':
 
     finished_eps, successes, agent_used, map_indices, durations = run_batch(
         n_runs=N_RUNS,
-        map_max_index=args.map_max_index if hasattr(args, 'map_max_index') else MAP_MAX_INDEX,
-        agent_min=args.agent_min if hasattr(args, 'agent_min') else AGENT_MIN,
-        agent_max=args.agent_max if hasattr(args, 'agent_max') else AGENT_MAX,
-        seed=args.seed if hasattr(args, 'seed') else SEED,
-        graph_update_interval=args.graph_update_interval
+        map_max_index=(
+            args.map_max_index if hasattr(args, "map_max_index") else MAP_MAX_INDEX
+        ),
+        agent_min=args.agent_min if hasattr(args, "agent_min") else AGENT_MIN,
+        agent_max=args.agent_max if hasattr(args, "agent_max") else AGENT_MAX,
+        seed=args.seed if hasattr(args, "seed") else SEED,
+        graph_update_interval=args.graph_update_interval,
     )
-    
+
     save_results_csv(finished_eps, successes, agent_used, map_indices, durations)
-    
+
     # 印出簡單統計
     arr = np.array(finished_eps, dtype=float)
     if arr.size > 0 and np.isfinite(arr).any():
         finite = arr[np.isfinite(arr)]
-        print(f"finished_ep stats -> count={finite.size}, mean={finite.mean():.2f}, median={np.median(finite):.2f}, std={finite.std(ddof=1):.2f}, min={finite.min()}, max={finite.max()}")
+        print(
+            f"finished_ep stats -> count={finite.size}, mean={finite.mean():.2f}, median={np.median(finite):.2f}, std={finite.std(ddof=1):.2f}, min={finite.min()}, max={finite.max()}"
+        )
     else:
         print("No valid finished_ep data to show stats.")
 

@@ -3,19 +3,35 @@
 # Simulate the sensor model of Lidar.
 #######################################################################
 
-import numpy as np
 import copy
-from numba import jit # <--- 1. 匯入 jit
-from parameter import OBSTACLE_THICKNESS, PIXEL_FREE, PIXEL_OCCUPIED, PIXEL_UNKNOWN, SENSOR_ANGLE_INC, MAX_SENSOR_STEPS
+from typing import List, Optional, Tuple, Union
+
+import numpy as np
+from numba import jit  # <--- 1. 匯入 jit
+
+from parameter import (
+    MAX_SENSOR_STEPS,
+    OBSTACLE_THICKNESS,
+    PIXEL_FREE,
+    PIXEL_OCCUPIED,
+    PIXEL_UNKNOWN,
+    SENSOR_ANGLE_INC,
+)
+
 # 假設 collision_check 已經在 utils.py 中被 @jit 修飾
-from utils import check_collision # 確保從 utils 匯入的是 JIT 版本
-from typing import List, Tuple, Optional, Union
+from utils import check_collision  # 確保從 utils 匯入的是 JIT 版本
+
 
 # 注意：因為 sensor_work 呼叫了 check_collision，
 # 且 check_collision 被 JIT 編譯，
 # 所以 sensor_work 也必須被 JIT 編譯才能高效呼叫。
-@jit(nopython=True) # <--- 2. 加上 JIT 裝飾器
-def sensor_work(robot_position: np.ndarray, sensor_range: Union[float, int], robot_local_map: np.ndarray, real_map: np.ndarray) -> np.ndarray:
+@jit(nopython=True)  # <--- 2. 加上 JIT 裝飾器
+def sensor_work(
+    robot_position: np.ndarray,
+    sensor_range: Union[float, int],
+    robot_local_map: np.ndarray,
+    real_map: np.ndarray,
+) -> np.ndarray:
     """擴展並更新機器人本地地圖（JIT 編譯函式）。
 
     使用射線掃描（簡化的 Lidar 模型）從 robot_position 朝多個角度掃描，
@@ -35,31 +51,42 @@ def sensor_work(robot_position: np.ndarray, sensor_range: Union[float, int], rob
     """
     # 角度增量需要是常數，或者傳入
     sensor_angle_inc = SENSOR_ANGLE_INC
-    sensor_angle = 0.0 # 使用浮點數
+    sensor_angle = 0.0  # 使用浮點數
     x0 = robot_position[0]
     y0 = robot_position[1]
-    
+
     # 預先計算 map 邊界，避免在迴圈內重複計算
     map_height, map_width = real_map.shape
-    
+
     # Numba 不支援直接修改傳入的 numpy array，但通常可以運作。
     # 如果遇到問題，可能需要回傳一個新的 map。
     # 暫時假設可以直接修改 robot_local_map。
-    
-    local_map_copy = robot_local_map.copy() # Numba 中建議操作 copy
+
+    local_map_copy = robot_local_map.copy()  # Numba 中建議操作 copy
 
     while sensor_angle < 2 * np.pi:
         # 使用 np.cos/sin，numba 支援
         x1 = x0 + np.cos(sensor_angle) * sensor_range
         y1 = y0 + np.sin(sensor_angle) * sensor_range
-        
+
         # 呼叫 JIT 編譯過的 check_collision
         # 注意：check_collision 現在應該回傳修改後的 map
-        local_map_copy = _sensor_collision_check_wrapper(x0, y0, x1, y1, real_map, local_map_copy, map_height, map_width, sensor_range)
+        local_map_copy = _sensor_collision_check_wrapper(
+            x0,
+            y0,
+            x1,
+            y1,
+            real_map,
+            local_map_copy,
+            map_height,
+            map_width,
+            sensor_range,
+        )
 
         sensor_angle += sensor_angle_inc
-        
-    return local_map_copy # 回傳修改後的 map copy
+
+    return local_map_copy  # 回傳修改後的 map copy
+
 
 # 因為 JIT 函式不能直接修改傳入的 array 引數來回傳結果，
 # 我們需要一個 wrapper 來處理 check_collision 的回傳值。
@@ -67,10 +94,21 @@ def sensor_work(robot_position: np.ndarray, sensor_range: Union[float, int], rob
 # 但為了簡化，我們先假設 utils.check_collision 被修改成類似以下形式
 # (或者創建一個新的輔助函式)
 
+
 # 這裡我們先創建一個模擬的 JIT 內部輔助函式，它執行類似 check_collision 的邏輯
 # 但直接修改傳入的 local_map_copy
 @jit(nopython=True)
-def _sensor_collision_check_wrapper(x0_f: float, y0_f: float, x1_f: float, y1_f: float, real_map: np.ndarray, local_map_copy: np.ndarray, map_height: int, map_width: int, sensor_range: Union[float, int]) -> np.ndarray:
+def _sensor_collision_check_wrapper(
+    x0_f: float,
+    y0_f: float,
+    x1_f: float,
+    y1_f: float,
+    real_map: np.ndarray,
+    local_map_copy: np.ndarray,
+    map_height: int,
+    map_width: int,
+    sensor_range: Union[float, int],
+) -> np.ndarray:
     """內部 JIT 輔助：沿線檢查並在 local_map_copy 上標記可見像素。
 
     使用整數化後的 Bresenham-like 步進從 (x0,y0) 朝 (x1,y1) 前進，
@@ -97,10 +135,10 @@ def _sensor_collision_check_wrapper(x0_f: float, y0_f: float, x1_f: float, y1_f:
 
     dx, dy = abs(x1 - x0), abs(y1 - y0)
     x, y = x0, y0
-    
+
     # 邊界檢查初始點
     if not (0 <= x < map_width and 0 <= y < map_height):
-         return local_map_copy # 起點無效
+        return local_map_copy  # 起點無效
 
     error = dx - dy
     x_inc = 1 if x1 > x0 else -1
@@ -120,7 +158,7 @@ def _sensor_collision_check_wrapper(x0_f: float, y0_f: float, x1_f: float, y1_f:
         if not (0 <= x < map_width and 0 <= y < map_height):
             break
 
-        k = real_map[y, x] # 使用標準索引
+        k = real_map[y, x]  # 使用標準索引
         # 更新 local map 並應用 obstacle-thickness 行為
         if k == PIXEL_OCCUPIED:
             # 標記為 obstacle
@@ -136,7 +174,7 @@ def _sensor_collision_check_wrapper(x0_f: float, y0_f: float, x1_f: float, y1_f:
             # 若為 free，且當前 belief 非 obstacle，則標為 free
             if k == PIXEL_FREE:
                 if local_map_copy[y, x] != 1:
-                        local_map_copy[y, x] = PIXEL_FREE
+                    local_map_copy[y, x] = PIXEL_FREE
         # 碰到未知區域也可能需要停止，取決於感測器模型
         # if k == PIXEL_UNKNOWN:
         #    break
@@ -145,7 +183,7 @@ def _sensor_collision_check_wrapper(x0_f: float, y0_f: float, x1_f: float, y1_f:
         # (因為是射線，不需要檢查是否精確到達 x1, y1)
         # if x == x1 and y == y1:
         #    break
-            
+
         # Bresenham 步進
         if error > 0:
             x += x_inc
@@ -153,14 +191,15 @@ def _sensor_collision_check_wrapper(x0_f: float, y0_f: float, x1_f: float, y1_f:
         else:
             y += y_inc
             error += dx
-            
+
         # 檢查是否超出 sensor_range (近似)
         # Numba 不支援 np.linalg.norm, 手動計算
-        current_dist_sq = (x - x0)**2 + (y - y0)**2
-        sensor_range_sq = sensor_range**2 # 在外部計算傳入會更好
+        current_dist_sq = (x - x0) ** 2 + (y - y0) ** 2
+        sensor_range_sq = sensor_range**2  # 在外部計算傳入會更好
         if current_dist_sq > sensor_range_sq:
-            break # 超出範圍
+            break  # 超出範圍
 
     return local_map_copy
+
 
 # 移除舊的 collision_check 函式 (已移到 utils.py)

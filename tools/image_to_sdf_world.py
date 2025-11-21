@@ -13,6 +13,7 @@ Edit CONFIG below, then run:  python3 src/mobile_robot/tools/image_to_sdf_world.
 """
 
 import os
+
 import numpy as np
 
 # Prefer OpenCV (fast); will fall back to Pillow if needed
@@ -34,29 +35,28 @@ except Exception:
 CONFIG = {
     # Either point to a ROS map YAML (preferred), or set IMAGE_PATH/RESOLUTION/ORIGIN_* manually.
     "MAP_YAML": "",  # e.g. "/home/you/maps/office.yaml" (leave "" to disable)
-
     # If no MAP_YAML, use these:
-    "IMAGE_PATH": os.path.expanduser("/home/mouad/ws_mobile/src/mobile_robot/tools/floor_plan.png"),
-    "RESOLUTION": 0.05,     # meters/pixel
-    "ORIGIN_X": 0.0,        # world X of image pixel (0,0)
-    "ORIGIN_Y": 0.0,        # world Y of image pixel (0,0)
-    "FLIP_Y": True,         # True: +Y up in world
-
+    "IMAGE_PATH": os.path.expanduser(
+        "/home/mouad/ws_mobile/src/mobile_robot/tools/floor_plan.png"
+    ),
+    "RESOLUTION": 0.05,  # meters/pixel
+    "ORIGIN_X": 0.0,  # world X of image pixel (0,0)
+    "ORIGIN_Y": 0.0,  # world Y of image pixel (0,0)
+    "FLIP_Y": True,  # True: +Y up in world
     # Geometry of extruded walls
-    "WALL_HEIGHT": 2.5,     # meters
-    "WALL_THICKNESS": 0.10, # meters (thickness along Y for horizontal strips, but we merge vertically now)
-
+    "WALL_HEIGHT": 2.5,  # meters
+    "WALL_THICKNESS": 0.10,  # meters (thickness along Y for horizontal strips, but we merge vertically now)
     # Binarization
-    "THRESHOLD": 128,       # pixel < THRESHOLD => wall
-
+    "THRESHOLD": 128,  # pixel < THRESHOLD => wall
     # --- Piece-count reduction knobs ---
-    "DOWNSAMPLE_FACTOR": 1,     # 1 = off; 2 halves both dims (area/4); 3,4...
-    "MORPH_CLOSE_SIZE": 3,      # 0=off; 3 or 5 is good to bridge 1px gaps
-    "MERGE_TOL_PX": 1,          # allow x-run to shift by this many px across rows and still be merged
-    "MIN_RECT_SIZE_M": 0.15,    # drop rectangles smaller than this on either side (meters)
-
+    "DOWNSAMPLE_FACTOR": 1,  # 1 = off; 2 halves both dims (area/4); 3,4...
+    "MORPH_CLOSE_SIZE": 3,  # 0=off; 3 or 5 is good to bridge 1px gaps
+    "MERGE_TOL_PX": 1,  # allow x-run to shift by this many px across rows and still be merged
+    "MIN_RECT_SIZE_M": 0.15,  # drop rectangles smaller than this on either side (meters)
     # Output
-    "OUTPUT_SDF": os.path.expanduser("~/ws_mobile/src/mobile_robot/model/floorplan.world"),
+    "OUTPUT_SDF": os.path.expanduser(
+        "~/ws_mobile/src/mobile_robot/model/floorplan.world"
+    ),
 }
 # ---------------------------------------------------------------
 
@@ -92,6 +92,7 @@ SDF_FOOTER = """
 </sdf>
 """
 
+
 def read_yaml_map(path):
     with open(path, "r") as f:
         data = yaml.safe_load(f)
@@ -117,6 +118,7 @@ def read_yaml_map(path):
         "negate": negate,
     }
 
+
 def load_gray(path):
     if cv2 is not None:
         img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
@@ -125,9 +127,12 @@ def load_gray(path):
         return img
     if Image is not None:
         return np.array(Image.open(path).convert("L"))
-    raise RuntimeError("Need OpenCV (python3-opencv) or Pillow (python3-pil) to read images.")
+    raise RuntimeError(
+        "Need OpenCV (python3-opencv) or Pillow (python3-pil) to read images."
+    )
 
-def add_box_model(name, cx, cy, yaw, sx, sy, sz, color=(0.2,0.2,0.2,1.0)):
+
+def add_box_model(name, cx, cy, yaw, sx, sy, sz, color=(0.2, 0.2, 0.2, 1.0)):
     return f"""
     <model name="{name}">
       <static>true</static>
@@ -144,29 +149,35 @@ def add_box_model(name, cx, cy, yaw, sx, sy, sz, color=(0.2,0.2,0.2,1.0)):
     </model>
 """
 
+
 def binarize(img, threshold, negate_from_yaml=0):
     if negate_from_yaml == 1:
         img = 255 - img
     walls = (img < int(threshold)).astype(np.uint8)
     return walls
 
+
 def downsample(img_u8, factor):
     if factor <= 1:
         return img_u8
     if cv2 is not None:
         h, w = img_u8.shape
-        return cv2.resize(img_u8, (w // factor, h // factor), interpolation=cv2.INTER_AREA)
+        return cv2.resize(
+            img_u8, (w // factor, h // factor), interpolation=cv2.INTER_AREA
+        )
     # Pillow fallback
     pil = Image.fromarray(img_u8)
     w, h = pil.size
     pil_small = pil.resize((w // factor, h // factor), resample=Image.BOX)
     return np.array(pil_small)
 
+
 def morph_close(img_u8, ksize):
     if ksize <= 0 or cv2 is None:
         return img_u8
     kernel = np.ones((ksize, ksize), np.uint8)
     return cv2.morphologyEx(img_u8, cv2.MORPH_CLOSE, kernel)
+
 
 def runs_in_row(row):
     """Return list of (x0,x1) for contiguous 1s in a binary row (x1 exclusive)."""
@@ -184,6 +195,7 @@ def runs_in_row(row):
         runs.append((x0, x1))
     return runs
 
+
 def merge_rows_to_rects(walls, merge_tol_px=1):
     """
     Take a binary image (1=wall) and turn it into big axis-aligned rectangles
@@ -200,12 +212,14 @@ def merge_rows_to_rects(walls, merge_tol_px=1):
         matched_flags = [False] * len(active)
         new_active = []
 
-        for (rx0, rx1) in row_runs:
+        for rx0, rx1 in row_runs:
             # try match with an active rect (same-ish x span)
             best = None
             for i, rect in enumerate(active):
                 # allow small drift in x0/x1
-                if (abs(rect["x0"] - rx0) <= merge_tol_px) and (abs(rect["x1"] - rx1) <= merge_tol_px):
+                if (abs(rect["x0"] - rx0) <= merge_tol_px) and (
+                    abs(rect["x1"] - rx1) <= merge_tol_px
+                ):
                     best = i
                     break
             if best is not None:
@@ -230,6 +244,7 @@ def merge_rows_to_rects(walls, merge_tol_px=1):
     # flush remaining
     rects.extend(active)
     return rects
+
 
 def main():
     cfg = CONFIG.copy()
@@ -260,10 +275,7 @@ def main():
 
     H, W = walls.shape
     # Merge into rectangles
-    rects_px = merge_rows_to_rects(
-        walls,
-        merge_tol_px=int(cfg["MERGE_TOL_PX"])
-    )
+    rects_px = merge_rows_to_rects(walls, merge_tol_px=int(cfg["MERGE_TOL_PX"]))
 
     # Convert pixel rects to SDF box models
     res = float(cfg["RESOLUTION"])
@@ -295,16 +307,25 @@ def main():
             cy = oy + (-cy_pix * res if flip_y else cy_pix * res)
             # Plain dark gray walls (no textures)
             name = f"wall_{y0}_{x0}"
-            f.write(add_box_model(name, cx, cy, 0.0, sx, sy, height, color=(0.2,0.2,0.2,1.0)))
+            f.write(
+                add_box_model(
+                    name, cx, cy, 0.0, sx, sy, height, color=(0.2, 0.2, 0.2, 1.0)
+                )
+            )
             kept += 1
 
         f.write(SDF_FOOTER)
 
     print(f"[image_to_sdf_world] wrote: {cfg['OUTPUT_SDF']}")
     print(f"  image: {cfg['IMAGE_PATH']}  size(px): {W}x{H}")
-    print(f"  res: {cfg['RESOLUTION']} m/px   origin: ({cfg['ORIGIN_X']}, {cfg['ORIGIN_Y']})  flipY: {cfg['FLIP_Y']}")
-    print(f"  downsample: {cfg['DOWNSAMPLE_FACTOR']}  morph_close: {cfg['MORPH_CLOSE_SIZE']}  merge_tol_px: {cfg['MERGE_TOL_PX']}")
+    print(
+        f"  res: {cfg['RESOLUTION']} m/px   origin: ({cfg['ORIGIN_X']}, {cfg['ORIGIN_Y']})  flipY: {cfg['FLIP_Y']}"
+    )
+    print(
+        f"  downsample: {cfg['DOWNSAMPLE_FACTOR']}  morph_close: {cfg['MORPH_CLOSE_SIZE']}  merge_tol_px: {cfg['MERGE_TOL_PX']}"
+    )
     print(f"  rectangles kept: {kept}, dropped (min size): {dropped}")
+
 
 if __name__ == "__main__":
     main()

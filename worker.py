@@ -1,21 +1,32 @@
-import numpy as np
-import copy
-import sys
-import random
-import datetime
 import argparse
+import copy
+import datetime
 import logging
 import os
-from typing import Tuple, Optional
+import random
+import sys
+from typing import Optional, Tuple
 
+import numpy as np
+
+from env import Env
 from parameter import *
 from robot import Robot
-from env import Env
 
 logger = logging.getLogger(__name__)
 
+
 class Worker:
-    def __init__(self, global_step: int = 0, agent_num: int = 3, map_index: int = 0, plot: bool = False, save_video: bool = True, force_sync_debug: bool = False, graph_update_interval: Optional[int] = None) -> None:
+    def __init__(
+        self,
+        global_step: int = 0,
+        agent_num: int = 3,
+        map_index: int = 0,
+        plot: bool = False,
+        save_video: bool = True,
+        force_sync_debug: bool = False,
+        graph_update_interval: Optional[int] = None,
+    ) -> None:
         """建立 Worker 實例，初始化環境與機器人位置。
 
         Args:
@@ -33,18 +44,29 @@ class Worker:
         self.global_step = global_step
         self.agent_num = agent_num
         self.k_size = K_SIZE
-        self.env = Env(self.agent_num, map_index=map_index, k_size=self.k_size, plot=plot, force_sync_debug=force_sync_debug, graph_update_interval=graph_update_interval)
+        self.env = Env(
+            self.agent_num,
+            map_index=map_index,
+            k_size=self.k_size,
+            plot=plot,
+            force_sync_debug=force_sync_debug,
+            graph_update_interval=graph_update_interval,
+        )
         self.step_count = 0
         self.plot = plot
         self.save_video = save_video
         for i, robot in enumerate(self.env.robot_list):
-            if not hasattr(robot, 'node_coords') or robot.node_coords is None or len(robot.node_coords) == 0:
+            if (
+                not hasattr(robot, "node_coords")
+                or robot.node_coords is None
+                or len(robot.node_coords) == 0
+            ):
                 logger.warning(f"Robot {i} has no node_coords at init.")
             else:
-                iter_idx = min(i, len(robot.node_coords)-1 )
+                iter_idx = min(i, len(robot.node_coords) - 1)
                 robot_position = robot.node_coords[iter_idx]
                 robot.position = robot_position
-                if not hasattr(robot, 'movement_history') or not robot.movement_history:
+                if not hasattr(robot, "movement_history") or not robot.movement_history:
                     robot.movement_history = [robot.position.copy()]
                 elif not np.array_equal(robot.position, robot.movement_history[-1]):
                     robot.movement_history.append(robot.position.copy())
@@ -70,8 +92,11 @@ class Worker:
             for i, robot in enumerate(self.env.robot_list):
                 try:
                     robot.update_local_awareness(
-                        self.env.real_map, self.env.robot_list, self.env.server,
-                        self.env.find_frontier, self.env.merge_maps
+                        self.env.real_map,
+                        self.env.robot_list,
+                        self.env.server,
+                        self.env.find_frontier,
+                        self.env.merge_maps,
                     )
                     if robot.needs_new_target():
                         if not robot.is_in_server_range:
@@ -80,7 +105,10 @@ class Worker:
                 except Exception as e:
                     logger.error(f"Error in Robot {i} step {step}: {e}", exc_info=True)
                 num_targets = 0
-                if hasattr(robot.graph_generator, 'target_candidates') and robot.graph_generator.target_candidates is not None:
+                if (
+                    hasattr(robot.graph_generator, "target_candidates")
+                    and robot.graph_generator.target_candidates is not None
+                ):
                     num_targets = len(robot.graph_generator.target_candidates)
                 msg_cnt += f"| R{i} targets: {num_targets} "
 
@@ -104,7 +132,7 @@ class Worker:
             except Exception as e:
                 logger.error(f"Error in Server step {step}: {e}", exc_info=True)
                 done = False
-                coverage = self.env.calculate_coverage_ratio() # 使用 env 的方法
+                coverage = self.env.calculate_coverage_ratio()  # 使用 env 的方法
 
             # <--- 修改點：新的繪圖/儲存邏輯 ---
             # === 階段三：繪圖與日誌 ===
@@ -122,17 +150,22 @@ class Worker:
                     self.env.plot_env_without_window(step)
 
             except Exception as e:
-                logger.error(f"Error plotting/saving frame at step {step}: {e}", exc_info=True)
+                logger.error(
+                    f"Error plotting/saving frame at step {step}: {e}", exc_info=True
+                )
             # --- ---
 
             msg = f"\rEP: {curr_episode} | Step {step:5d} | Coverage: {coverage * 100:6.2f}% "
             msg += msg_cnt
-            sys.stdout.write(msg); sys.stdout.flush()
+            sys.stdout.write(msg)
+            sys.stdout.flush()
 
             # ... (if done: ... 區塊保持不變) ...
             if done:
                 sys.stdout.write("\n")
-                logger.info(f"Episode {curr_episode} completed at step {step} with coverage {coverage*100:.2f}%")
+                logger.info(
+                    f"Episode {curr_episode} completed at step {step} with coverage {coverage*100:.2f}%"
+                )
                 if self.save_video:
                     os.makedirs(output_dir, exist_ok=True)
                     time_str = datetime.datetime.now().strftime("%Y%m%d_%Hh%Mm%Ss")
@@ -143,12 +176,13 @@ class Worker:
                     self.env.save_video(filename)
                 return True, step
 
-
             self.step_count = step
 
         # ... (timeout 區塊保持不變) ...
         sys.stdout.write("\n")
-        logger.warning(f"Episode {curr_episode} timeout at step {step} with coverage {coverage*100:.2f}%")
+        logger.warning(
+            f"Episode {curr_episode} timeout at step {step} with coverage {coverage*100:.2f}%"
+        )
         if self.save_video:
             os.makedirs(output_dir, exist_ok=True)
             time_str = datetime.datetime.now().strftime("%Y%m%d_%Hh%Mm%Ss")
@@ -160,24 +194,53 @@ class Worker:
         return False, step
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # ... (argparse 邏輯不變) ...
     parser = argparse.ArgumentParser(description="Run a single episode...")
-    parser.add_argument('--TEST_MAP_INDEX', type=int, default=1, help='Map index (default: 1)')
-    parser.add_argument('--TEST_AGENT_NUM', type=int, default=3, help='Number of agents (default: 3)')
-    parser.add_argument('--plot', action='store_true', help='Enable real-time plotting')
-    parser.add_argument('--save_video', action=argparse.BooleanOptionalAction, default=True, help='Save video (default: True)')
-    parser.add_argument('--debug', action='store_true', help='Enable debug/info level logging (default: show only ERROR/CRITICAL)')
-    parser.add_argument('--force_sync_debug', action='store_true', help='(debug) force server to sync candidates/frontiers to all robots each step')
-    parser.add_argument('--graph-update-interval', '-g', type=int, default=None, help='Graph full rebuild interval override')
+    parser.add_argument(
+        "--TEST_MAP_INDEX", type=int, default=1, help="Map index (default: 1)"
+    )
+    parser.add_argument(
+        "--TEST_AGENT_NUM", type=int, default=3, help="Number of agents (default: 3)"
+    )
+    parser.add_argument("--plot", action="store_true", help="Enable real-time plotting")
+    parser.add_argument(
+        "--save_video",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Save video (default: True)",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug/info level logging (default: show only ERROR/CRITICAL)",
+    )
+    parser.add_argument(
+        "--force_sync_debug",
+        action="store_true",
+        help="(debug) force server to sync candidates/frontiers to all robots each step",
+    )
+    parser.add_argument(
+        "--graph-update-interval",
+        "-g",
+        type=int,
+        default=None,
+        help="Graph full rebuild interval override",
+    )
     args = parser.parse_args()
 
     # Default: only show ERROR and CRITICAL to reduce log noise.
     # If --debug is provided, enable DEBUG so we can print per-step robot positions.
     log_level = logging.DEBUG if args.debug else logging.ERROR
-    logging.basicConfig(level=log_level, format='%(asctime)s %(levelname)-8s [%(name)s] %(message)s', datefmt='%H:%M:%S')
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s %(levelname)-8s [%(name)s] %(message)s",
+        datefmt="%H:%M:%S",
+    )
 
-    logger.info(f"Starting worker with Map Index: {args.TEST_MAP_INDEX}, Agent Num: {args.TEST_AGENT_NUM}, Plot: {args.plot}, Save Video: {args.save_video}")
+    logger.info(
+        f"Starting worker with Map Index: {args.TEST_MAP_INDEX}, Agent Num: {args.TEST_AGENT_NUM}, Plot: {args.plot}, Save Video: {args.save_video}"
+    )
 
     try:
         worker = Worker(
@@ -190,7 +253,9 @@ if __name__ == '__main__':
             graph_update_interval=args.graph_update_interval,
         )
         success, steps = worker.run_episode(curr_episode=0)
-        logger.info(f'Episode finished: {success} in {steps} steps.')
+        logger.info(f"Episode finished: {success} in {steps} steps.")
     except Exception as e:
-        logger.critical(f"Simulation failed with unhandled exception: {e}", exc_info=True)
+        logger.critical(
+            f"Simulation failed with unhandled exception: {e}", exc_info=True
+        )
         sys.exit(1)
