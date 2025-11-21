@@ -2,27 +2,29 @@ import numpy as np
 from collections import deque
 import logging
 import copy
+from typing import List, Tuple, Optional, Set, Dict, Any, Union
 
 from parameter import *
 from graph_generator import Graph_generator
 from sensor import sensor_work
 from skimage.measure import block_reduce
 import sys
-from graph import Graph, Edge  # <--- 確保匯入 Graph 和 Edge
+from graph import Graph, Edge
 
 logger = logging.getLogger(__name__)
 
 
 class Robot():
-    def __init__(self, start_position, real_map_size, resolution, k_size, plot=False, graph_update_interval=None):
+    def __init__(self, start_position: np.ndarray, real_map_size: Tuple[int, int], resolution: int, k_size: int, plot: bool = False, graph_update_interval: Optional[int] = None) -> None:
         """初始化 Robot。
 
         Args:
-            start_position (array-like[2]): 機器人起始位置。
-            real_map_size (tuple): 地圖大小 (height, width)。
+            start_position (np.ndarray): 機器人起始位置。
+            real_map_size (Tuple[int, int]): 地圖大小 (height, width)。
             resolution (int): 下採樣比例。
             k_size (int): Graph generator 的 k。
             plot (bool): 是否啟用繪圖。
+            graph_update_interval (Optional[int]): Graph 更新間隔。
 
         Returns:
             None
@@ -37,8 +39,8 @@ class Robot():
         self.local_map_graph = None  # This will store graph.edges dict
         self.node_utility = None
         self.guidepost = None
-        self.planned_path = []
-        self.target_pos = None
+        self.planned_path: List[np.ndarray] = []
+        self.target_pos: Optional[np.ndarray] = None
         self.movement_history = [start_position.copy()]
         self.graph_generator: Graph_generator = Graph_generator(
             map_size=real_map_size, sensor_range=self.sensor_range, k_size=k_size, plot=plot
@@ -84,12 +86,12 @@ class Robot():
         self.handoff_cooldown = 0
         # self.debug removed
 
-    def update_local_awareness(self, real_map, all_robots, server, find_frontier_func, merge_maps_func):
+    def update_local_awareness(self, real_map: np.ndarray, all_robots: List['Robot'], server: Any, find_frontier_func: Any, merge_maps_func: Any) -> None:
         """執行感知、地圖合併、機器人交互與節點/效用更新（一步）。
 
         Args:
-            real_map (ndarray): 真實地圖 (y,x)。
-            all_robots (list[Robot]): 所有機器人清單。
+            real_map (np.ndarray): 真實地圖 (y,x)。
+            all_robots (List[Robot]): 所有機器人清單。
             server (Server): 伺服器物件。
             find_frontier_func (callable): 用於尋找 frontier 的函式。
             merge_maps_func (callable): 用於合併地圖的函式。
@@ -321,16 +323,15 @@ class Robot():
 
         self.frontiers = new_frontiers
 
-    # ... (needs_new_target, decide_next_target, move_one_step, _select_node 保持不變) ...
-    def needs_new_target(self):
+    def needs_new_target(self) -> bool:
         """檢查是否需要新目標（路徑為空）。 Returns bool。"""
         return len(self.planned_path) < 1
 
-    def decide_next_target(self, all_robots):
+    def decide_next_target(self, all_robots: List['Robot']) -> None:
         """決策下一個目標（含返回、冷卻、重新規劃邏輯）。
 
         Args:
-            all_robots (list[Robot]): 其他機器人清單。
+            all_robots (List[Robot]): 其他機器人清單。
 
         Returns:
             None
@@ -411,11 +412,11 @@ class Robot():
         path_len = len(self.planned_path) if self.planned_path else 0
         logger.debug(f"[R{self.robot_id} Decide] Final Target: {self.target_pos}, Reason: {decision_reason}, PathLen: {path_len}")
 
-    def move_one_step(self, all_robots):
+    def move_one_step(self, all_robots: List['Robot']) -> None:
         """執行單步移動：檢查阻擋、退讓、重新規劃或前進。
 
         Args:
-            all_robots (list[Robot]): 其他機器人清單。
+            all_robots (List[Robot]): 其他機器人清單。
 
         Returns:
             None
@@ -492,14 +493,14 @@ class Robot():
         else:
             self.is_in_server_range = False
 
-    def _select_node(self, all_robots):
+    def _select_node(self, all_robots: List['Robot']) -> Tuple[np.ndarray, int, float]:
         """選擇最佳 local 候選節點。
 
         Args:
-            all_robots (list[Robot]): 其他機器人清單。
+            all_robots (List[Robot]): 其他機器人清單。
 
         Returns:
-            tuple: (selected_coord (ndarray), original_idx (int), min_valid_dists (float))
+            Tuple[np.ndarray, int, float]: (selected_coord (ndarray), original_idx (int), min_valid_dists (float))
         """
         if not hasattr(self.graph_generator, 'target_candidates') or self.graph_generator.target_candidates is None:
             logger.debug(f"[R{self.robot_id} SelectNode] graph_generator.target_candidates is None!")
@@ -621,15 +622,15 @@ class Robot():
         logger.debug(f"[R{self.robot_id} SelectNode] Cands:{num_candidates}, Valid:{num_valid_after_filter} -> Sel:{selected_coord}, Score:{scores[best_idx_in_valid]:.2f}, Util:{valid_utilities[best_idx_in_valid]}, Dist:{valid_dists[best_idx_in_valid]:.1f}")
         return selected_coord, original_idx, min_valid_dists
 
-    def _plan_local_path(self, target, avoid_pos=None):
+    def _plan_local_path(self, target: np.ndarray, avoid_pos: Optional[np.ndarray] = None) -> List[np.ndarray]:
         """使用本地圖(graph)計算到 target 的路徑，若失敗回傳 [current]。
 
         Args:
-            target (array-like[2]): 目標座標。
-            avoid_pos (array-like[2], optional): 要避免的位置（可為 None）。
+            target (np.ndarray): 目標座標。
+            avoid_pos (Optional[np.ndarray]): 要避免的位置（可為 None）。
 
         Returns:
-            list: 路徑座標列表（至少包含 current position）。
+            List[np.ndarray]: 路徑座標列表（至少包含 current position）。
         """
         gen = self.graph_generator
         current = self.position

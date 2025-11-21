@@ -9,10 +9,11 @@ import logging
 import argparse
 import multiprocessing
 from functools import partial
+from typing import List, Tuple, Optional, Dict, Any, Union
 
 from worker import Worker
 
-def run_single_experiment(args_tuple):
+def run_single_experiment(args_tuple: Tuple[int, int, int, Optional[int]]) -> Dict[str, Any]:
     """
     執行單次實驗的頂層函式，供 multiprocessing 調用。
     Args:
@@ -36,6 +37,7 @@ def run_single_experiment(args_tuple):
     dur = t_end - t_start
 
     # 處理 finished_ep 格式
+    finished_ep_scalar: Union[float, int] = np.nan
     if isinstance(finished_ep, (list, tuple, np.ndarray)) and len(finished_ep) > 0:
         finished_ep_scalar = finished_ep[-1]
     elif isinstance(finished_ep, (int, float)):
@@ -52,7 +54,7 @@ def run_single_experiment(args_tuple):
         "duration": dur
     }
 
-def run_batch(n_runs=100, map_max_index=1000, agent_min=3, agent_max=5, seed=None, graph_update_interval=None):
+def run_batch(n_runs: int = 100, map_max_index: int = 1000, agent_min: int = 3, agent_max: int = 5, seed: Optional[int] = None, graph_update_interval: Optional[int] = None) -> Tuple[List[Any], List[bool], List[int], List[int], List[float]]:
     """
     跑多次實驗並回傳每次 finished_ep 列表 (平行化版本)
     """
@@ -67,11 +69,11 @@ def run_batch(n_runs=100, map_max_index=1000, agent_min=3, agent_max=5, seed=Non
         map_index = random.randint(0, map_max_index)
         tasks.append((i, agent_num, map_index, graph_update_interval))
 
-    finished_eps = []
-    successes = []
-    agent_used = []
-    map_indices = []
-    durations = []
+    finished_eps: List[Any] = []
+    successes: List[bool] = []
+    agent_used: List[int] = []
+    map_indices: List[int] = []
+    durations: List[float] = []
 
     # 偵測 CPU 核心數，保留一顆核心給系統
     num_processes = max(1, multiprocessing.cpu_count() - 1)
@@ -104,7 +106,7 @@ def run_batch(n_runs=100, map_max_index=1000, agent_min=3, agent_max=5, seed=Non
 
     return finished_eps, successes, agent_used, map_indices, durations
 
-def save_and_viz_results(finished_eps, successes, agent_used, map_indices, durations, csv_path="results1.csv"):
+def save_and_viz_results(finished_eps: List[Any], successes: List[bool], agent_used: List[int], map_indices: List[int], durations: List[float], csv_path: str = "results1.csv") -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     將每次實驗指標存成 CSV，並計算按 map_index 奇偶分組的摘要統計：
       - finished_ep（中位數、平均）
@@ -138,13 +140,13 @@ def save_and_viz_results(finished_eps, successes, agent_used, map_indices, durat
     return df, summary
 
 def plot_boxplots_finished_duration(
-    finished_eps,
-    durations,
-    output_png="finished_duration_boxplots.png",
-    title="Finished EP, Duration, and Duration per EP",
-    skip_zero_finished=True,
-    show_mean=True
-):
+    finished_eps: List[Any],
+    durations: List[float],
+    output_png: str = "finished_duration_boxplots.png",
+    title: str = "Finished EP, Duration, and Duration per EP",
+    skip_zero_finished: bool = True,
+    show_mean: bool = True
+) -> None:
     """
     畫出三個箱形圖：
     1) finished_ep
@@ -229,7 +231,7 @@ def plot_boxplots_finished_duration(
     plt.close(fig)
     print(f"Boxplot saved to {output_png}")
 
-def save_results_csv(finished_eps, successes, agent_used, map_indices, durations, filename="results.csv"):
+def save_results_csv(finished_eps: List[Any], successes: List[bool], agent_used: List[int], map_indices: List[int], durations: List[float], filename: str = "results.csv") -> None:
     df = pd.DataFrame({
         "finished_ep": finished_eps,
         "success": successes,

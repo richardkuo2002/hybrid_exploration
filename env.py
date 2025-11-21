@@ -8,6 +8,7 @@ import logging
 import sys
 import cv2, tempfile, io
 from PIL import Image
+from typing import List, Tuple, Optional, Set, Dict, Any, Union
 
 from robot import Robot
 from server import Server
@@ -18,7 +19,7 @@ from parameter import *
 logger = logging.getLogger(__name__)
 
 class Env():
-    def __init__(self, n_agent:int, k_size=20, map_index=0, plot=True, force_sync_debug=False, graph_update_interval=None):
+    def __init__(self, n_agent: int, k_size: int = 20, map_index: int = 0, plot: bool = True, force_sync_debug: bool = False, graph_update_interval: Optional[int] = None) -> None:
         """初始化環境 (讀取地圖、建立伺服器與機器人)。
 
         Args:
@@ -26,6 +27,8 @@ class Env():
             k_size (int): graph generator 的 k。
             map_index (int): 選擇地圖的索引。
             plot (bool): 是否啟用繪圖。
+            force_sync_debug (bool): 是否強制同步除錯。
+            graph_update_interval (Optional[int]): Graph 更新間隔。
 
         Returns:
             None
@@ -54,7 +57,7 @@ class Env():
         self.force_sync_debug = force_sync_debug
         self.server = Server(self.start_position, self.real_map_size, self.resolution, k_size, plot, force_sync_debug=self.force_sync_debug, graph_update_interval=graph_update_interval)
         self.n_agent = n_agent
-        self.robot_list: list[Robot] = []
+        self.robot_list: List[Robot] = []
         self.server.all_robot_position = [None] * n_agent
         self.server.robot_in_range = [False] * n_agent
         # Deterministic placement: cycle through top-left, top-right, bottom-right, bottom-left
@@ -65,7 +68,7 @@ class Env():
         # ordered offsets: TL, TR, BR, BL (x,y)
         offsets = [(-offset_dist, -offset_dist), (offset_dist, -offset_dist), (offset_dist, offset_dist), (-offset_dist, offset_dist)]
 
-        def find_nearest_free(xc, yc, max_search=8):
+        def find_nearest_free(xc: int, yc: int, max_search: int = 8) -> Optional[np.ndarray]:
             # deterministic neighborhood search (increasing Manhattan radius)
             h, w = self.real_map.shape
             from parameter import PIXEL_FREE
@@ -133,7 +136,7 @@ class Env():
         self._video_writer = None            # cv2.VideoWriter 物件（若串流）
         self._video_tmp_path = None          # 臨時影片檔路徑（串流時使用）
         self._frames_buffer_max = 300        # 若無 cv2，最多保留多少幀（可調）
-        self.frames_data = []                # 緩衝（可能為 numpy 或 bytes，視情況而定）
+        self.frames_data: List[bytes] = []                # 緩衝（可能為 numpy 或 bytes，視情況而定）
         self._frames_compressed = True       # 在緩衝模式下儲存壓縮 bytes 可降低記憶體
 
         try:
@@ -143,8 +146,7 @@ class Env():
         except Exception as e:
             logger.critical(f"Initial server update failed: {e}", exc_info=True); raise
 
-    # ... (calculate_coverage_ratio, merge_maps, update_robot_local_map, find_frontier 不變) ...
-    def calculate_coverage_ratio(self):
+    def calculate_coverage_ratio(self) -> float:
         """計算目前覆蓋率（使用 server.global_map 與真實地圖）。
 
         Returns:
@@ -153,14 +155,15 @@ class Env():
         from parameter import PIXEL_FREE
         explored_pixels = np.sum(self.server.global_map == PIXEL_FREE); total_free_pixels = np.sum(self.real_map == PIXEL_FREE)
         return min(explored_pixels / total_free_pixels, 1.0) if total_free_pixels > 0 else 0.0
-    def merge_maps(self, maps_to_merge):
+
+    def merge_maps(self, maps_to_merge: List[np.ndarray]) -> np.ndarray:
         """合併多張信念地圖，優先考慮障礙與可通行。
 
         Args:
-            maps_to_merge (list[ndarray]): 要合併的地圖清單。
+            maps_to_merge (List[np.ndarray]): 要合併的地圖清單。
 
         Returns:
-            ndarray: 合併後的地圖。
+            np.ndarray: 合併後的地圖。
         """
         from parameter import PIXEL_UNKNOWN
         merged_map = np.ones_like(self.real_map) * PIXEL_UNKNOWN
@@ -183,30 +186,32 @@ class Env():
         from parameter import PIXEL_OCCUPIED
         merged_map[any_obs] = PIXEL_OCCUPIED
         return merged_map
-    def update_robot_local_map(self, robot_position, sensor_range, robot_local_map, real_map):
+
+    def update_robot_local_map(self, robot_position: np.ndarray, sensor_range: int, robot_local_map: np.ndarray, real_map: np.ndarray) -> np.ndarray:
         """呼叫 sensor_work 更新機器人的 local map。
 
         Args:
-            robot_position (array-like[2]): 機器人位置。
+            robot_position (np.ndarray): 機器人位置。
             sensor_range (int): 感測半徑。
-            robot_local_map (ndarray): 當前 local map。
-            real_map (ndarray): 真實地圖。
+            robot_local_map (np.ndarray): 當前 local map。
+            real_map (np.ndarray): 真實地圖。
 
         Returns:
-            ndarray: 更新後的 local map（若發生例外則回傳原本的 local_map）。
+            np.ndarray: 更新後的 local map（若發生例外則回傳原本的 local_map）。
         """
         try:
             updated_map = sensor_work(robot_position, sensor_range, robot_local_map, real_map)
             return updated_map if isinstance(updated_map, np.ndarray) else robot_local_map
         except Exception as e: logger.error(f"Error sensor_work @ {robot_position}: {e}", exc_info=True); return robot_local_map
-    def find_frontier(self, downsampled_map):
+
+    def find_frontier(self, downsampled_map: np.ndarray) -> np.ndarray:
         """找出 downsampled_map 的 frontier 點。
 
         Args:
-            downsampled_map (ndarray): 下採樣後的地圖陣列。
+            downsampled_map (np.ndarray): 下採樣後的地圖陣列。
 
         Returns:
-            ndarray: frontier 座標陣列 (N,2)，若沒有則為空陣列。
+            np.ndarray: frontier 座標陣列 (N,2)，若沒有則為空陣列。
         """
         try:
             if downsampled_map is None or downsampled_map.ndim != 2: return np.array([]).reshape(0, 2)
@@ -223,14 +228,14 @@ class Env():
             f = points[ind_to] * self.resolution; return f.astype(int)
         except Exception as e: logger.error(f"Error find_frontier: {e}", exc_info=True); return np.array([]).reshape(0, 2)
 
-    def import_map_revised(self, map_path):
+    def import_map_revised(self, map_path: str) -> Tuple[np.ndarray, Optional[np.ndarray]]:
         """讀取地圖檔案並回傳轉換後的地圖與起始點座標。
 
         Args:
             map_path (str): 地圖檔案路徑。
 
         Returns:
-            tuple: (final_map (ndarray), start_location (ndarray))
+            Tuple[np.ndarray, Optional[np.ndarray]]: (final_map (ndarray), start_location (ndarray))
         """
         try:
             map_img_gray = skimage_io.imread(map_path, as_gray=True)
@@ -263,7 +268,7 @@ class Env():
         except Exception as e: logger.error(f"Error loading map {map_path}: {e}", exc_info=True); raise
 
 
-    def _get_plot_layout(self):
+    def _get_plot_layout(self) -> Tuple[int, int, int]:
         """計算繪圖格局 (內部)。Returns total_rows, total_cols, robot_row_start。"""
         n_maps = self.n_agent; base_rows_fixed = 4
         rows_for_maps = 0 if n_maps == 0 else ((n_maps - 1) // 2 + 1)
@@ -271,8 +276,7 @@ class Env():
         robot_row_start = base_rows_fixed
         return total_rows, total_cols, robot_row_start
 
-    # <--- 修改點：在 plot_env 加入 save_frame 參數 ---
-    def plot_env(self, step, save_frame=False):
+    def plot_env(self, step: int, save_frame: bool = False) -> None:
         """繪製環境視覺化，並選擇性將影格存入記憶（供 later saving）。
 
         Args:
@@ -282,7 +286,6 @@ class Env():
         Returns:
             None
         """
-        # --- ---
         if not hasattr(self, 'fig') or self.fig is None:
             try: plt.switch_backend('agg'); plt.figure(); plt.close(); plt.switch_backend('tkagg')
             except Exception as e: logger.warning(f"Failed backend switch: {e}")
@@ -293,7 +296,6 @@ class Env():
         color_list = ["r", "g", "c", "m", "y", "k"]
         total_rows, total_cols, robot_row_start = self._get_plot_layout()
 
-        # ... (Real Map 和 Global Map 繪製邏輯不變) ...
         # Real Map
         ax_real = plt.subplot2grid((total_rows, total_cols), (0, 0), rowspan=2, colspan=2)
         if self.server.position is not None: ax_real.plot(self.server.position[0], self.server.position[1], markersize=8, zorder=999, marker="h", ls="-", c=color_list[-2], mec="black")
@@ -306,7 +308,6 @@ class Env():
         ax_env.set_title('Global Map'); ax_env.axis('off')
         if self.server.frontiers is not None and len(self.server.frontiers) > 0: ax_env.scatter(self.server.frontiers[:, 0], self.server.frontiers[:, 1], c='lime', s=1, zorder=5)
 
-        # ... (Robot local maps 繪製邏輯不變) ...
         for i, robot in enumerate(self.robot_list):
             robot_marker_color = color_list[i % len(color_list)]
             row = robot_row_start + (i // 2); col = i % 2
@@ -339,13 +340,11 @@ class Env():
                  continue
 
         plt.tight_layout()
-        # <--- 修改點：根據 save_frame 決定是否儲存 ---
         if save_frame:
             self._save_frame_to_memory()
-        # --- ---
         plt.draw(); plt.pause(0.001)
 
-    def plot_env_without_window(self, step):
+    def plot_env_without_window(self, step: int) -> None:
         """不開視窗直接繪製並儲存影格（always save frame）。
 
         Args:
@@ -354,7 +353,6 @@ class Env():
         Returns:
             None
         """
-        # ...existing code...
         if not hasattr(self, 'fig') or self.fig is None:
             plt.ioff(); self.fig = plt.figure(figsize=(8, 10))
             if not hasattr(self, 'frames_data'): self.frames_data = []
@@ -408,7 +406,7 @@ class Env():
         plt.tight_layout()
         self._save_frame_to_memory() # 這裡總是儲存
 
-    def _save_frame_to_memory(self):
+    def _save_frame_to_memory(self) -> None:
         """將當前圖形保存到記憶體或直接寫入影片（減少記憶體佔用）。"""
         import io
         from PIL import Image
@@ -471,7 +469,7 @@ class Env():
         except Exception as e:
             logger.error(f"_save_frame_to_memory: failed to compress/store frame: {e}")
 
-    def save_video(self, filename="exploration_video.mp4", fps=5):
+    def save_video(self, filename: str = "exploration_video.mp4", fps: int = 5) -> None:
         """將所有幀匯出為影片。若使用串流已在臨時檔產生影片，則關閉並搬移檔案；否則由緩衝產生影片。"""
         # 若正在以 VideoWriter 串流
         if getattr(self, '_video_writer', None) is not None:

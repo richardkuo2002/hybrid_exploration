@@ -3,13 +3,13 @@ from numba import jit # <--- 1. 匯入 numba
 from parameter import PIXEL_OCCUPIED, PIXEL_UNKNOWN
 
 @jit(nopython=True) # <--- 2. 加上 JIT 裝飾器
-def check_collision(start, end, robot_map):
+def check_collision(start: np.ndarray, end: np.ndarray, robot_map: np.ndarray) -> bool:
     """檢查從 start 到 end 的線段是否與地圖中的障礙或未知區域發生碰撞 (Bresenham)。
 
     Args:
-        start (array-like[2]): 起點座標 [x, y]（整數或可轉為整數）。
-        end (array-like[2]): 終點座標 [x, y]（整數或可轉為整數）。
-        robot_map (ndarray): 表示地圖的 2D numpy 陣列 (y, x)。
+        start (np.ndarray): 起點座標 [x, y]（整數或可轉為整數）。
+        end (np.ndarray): 終點座標 [x, y]（整數或可轉為整數）。
+        robot_map (np.ndarray): 表示地圖的 2D numpy 陣列 (y, x)。
 
     Returns:
         bool: 若路徑上有碰撞（遇到障礙或未知）則回傳 True，否則 False。

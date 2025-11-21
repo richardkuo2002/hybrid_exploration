@@ -4,24 +4,27 @@ from scipy.optimize import linear_sum_assignment
 import sys
 import itertools
 import logging
+from typing import List, Tuple, Optional, Set, Dict, Any, Union
 
 from parameter import *
 from graph_generator import Graph_generator
-from graph import Graph, a_star, Edge # <--- 匯入 Edge
+from graph import Graph, a_star, Edge
 import copy
 
 logger = logging.getLogger(__name__)
 
 class Server():
-    def __init__(self, start_position, real_map_size, resolution, k_size, plot=False, force_sync_debug=False, graph_update_interval=None): # removed debug
+    def __init__(self, start_position: np.ndarray, real_map_size: Tuple[int, int], resolution: int, k_size: int, plot: bool = False, force_sync_debug: bool = False, graph_update_interval: Optional[int] = None) -> None:
         """初始化 Server，管理全域地圖與任務分派狀態。
 
         Args:
-            start_position (array-like[2]): 伺服器起始位置。
-            real_map_size (tuple): 真實地圖大小 (height, width)。
+            start_position (np.ndarray): 伺服器起始位置。
+            real_map_size (Tuple[int, int]): 真實地圖大小 (height, width)。
             resolution (int): 下採樣比例。
             k_size (int): Graph generator 使用的 k。
             plot (bool): 是否啟用繪圖相關功能。
+            force_sync_debug (bool): 是否強制同步除錯。
+            graph_update_interval (Optional[int]): Graph 更新間隔。
 
         Returns:
             None
@@ -31,32 +34,34 @@ class Server():
         self.global_map = np.ones(real_map_size) * PIXEL_UNKNOWN
         self.downsampled_map = None
         self.comm_range = SERVER_COMM_RANGE
-        self.all_robot_position = []
-        self.robot_in_range = []
-        self.graph_generator:Graph_generator = Graph_generator(map_size=real_map_size, sensor_range=SENSOR_RANGE, k_size=k_size, plot=plot)
+        self.all_robot_position: List[Optional[np.ndarray]] = []
+        self.robot_in_range: List[bool] = []
+        self.graph_generator: Graph_generator = Graph_generator(map_size=real_map_size, sensor_range=SENSOR_RANGE, k_size=k_size, plot=plot)
         self.graph_generator.route_node.append(start_position)
-        self.frontiers = []
-        self.node_coords = None
-        self.local_map_graph = None # graph.edges dict
-        self.node_utility = None
-        self.guidepost = None
+        self.frontiers: List[np.ndarray] = []
+        self.node_coords: Optional[np.ndarray] = None
+        self.local_map_graph: Optional[Dict[Tuple[int, int], Dict[Tuple[int, int], Edge]]] = None # graph.edges dict
+        self.node_utility: Optional[np.ndarray] = None
+        self.guidepost: Optional[Any] = None
         self.resolution = resolution
         self.graph_update_counter = 0 # Re-added counter
         # graph update interval: if not provided, fallback to parameter default
         from parameter import GRAPH_UPDATE_INTERVAL as DEFAULT_GRAPH_UPDATE_INTERVAL
         self.graph_update_interval = graph_update_interval if graph_update_interval is not None else DEFAULT_GRAPH_UPDATE_INTERVAL
         self.force_sync_debug = force_sync_debug
+        self.last_rebuild_time: Optional[float] = None
+        self.last_rebuild_step: Optional[int] = None
 
-    def update_and_assign_tasks(self, robot_list, real_map, find_frontier_func):
+    def update_and_assign_tasks(self, robot_list: List[Any], real_map: np.ndarray, find_frontier_func: Any) -> Tuple[bool, float]:
         """伺服器在一步之內更新圖、計算效用並指派任務。
 
         Args:
-            robot_list (list[Robot]): 所有 Robot 物件清單。
-            real_map (ndarray): 真實地圖 (y,x)。
+            robot_list (List[Robot]): 所有 Robot 物件清單。
+            real_map (np.ndarray): 真實地圖 (y,x)。
             find_frontier_func (callable): 用於尋找 frontier 的函式，接受 downsampled map 並回傳 frontier 陣列。
 
         Returns:
-            tuple:
+            Tuple[bool, float]:
                 done (bool): 是否完成探索。
                 coverage (float): 目前覆蓋率 (0.0-1.0)。
         """
@@ -276,17 +281,17 @@ class Server():
         return done, coverage
 
     # ... (_filter_occupied_targets 和 _plan_global_path 保持不變) ...
-    def _filter_occupied_targets(self, candidates, utilities, robot_list, requesting_robots):
+    def _filter_occupied_targets(self, candidates: np.ndarray, utilities: np.ndarray, robot_list: List[Any], requesting_robots: List[int]) -> Tuple[np.ndarray, np.ndarray]:
         """過濾已被其他機器人佔用或太接近的候選目標。
 
         Args:
-            candidates (ndarray): 候選目標陣列 (K,2)。
-            utilities (ndarray): 每個候選的效用陣列 (K,)。
-            robot_list (list[Robot]): 所有機器人清單。
-            requesting_robots (list[int]): 正在請求任務的機器人索引。
+            candidates (np.ndarray): 候選目標陣列 (K,2)。
+            utilities (np.ndarray): 每個候選的效用陣列 (K,)。
+            robot_list (List[Robot]): 所有機器人清單。
+            requesting_robots (List[int]): 正在請求任務的機器人索引。
 
         Returns:
-            tuple: (filtered_candidates (ndarray), filtered_utilities (ndarray))
+            Tuple[np.ndarray, np.ndarray]: (filtered_candidates (ndarray), filtered_utilities (ndarray))
         """
         available_mask = np.ones(len(candidates), dtype=bool); initial_count = len(candidates)
         for i, robot in enumerate(robot_list):
@@ -308,15 +313,15 @@ class Server():
         logger.debug(f"[Server Filter] Filtered targets: {initial_count} -> {final_count}")
         return candidates[available_mask], utilities[available_mask]
 
-    def _plan_global_path(self, current_pos, target_pos):
+    def _plan_global_path(self, current_pos: np.ndarray, target_pos: np.ndarray) -> List[np.ndarray]:
         """為 robot 計算全域路徑（使用最近一次的節點座標與 graph edges）。
 
         Args:
-            current_pos (array-like[2]): 機器人當前位置。
-            target_pos (array-like[2]): 目標位置。
+            current_pos (np.ndarray): 機器人當前位置。
+            target_pos (np.ndarray): 目標位置。
 
         Returns:
-            list: 路徑座標列表（至少包含 current_pos），若失敗則回傳 [current_pos]。
+            List[np.ndarray]: 路徑座標列表（至少包含 current_pos），若失敗則回傳 [current_pos]。
         """
         gen = self.graph_generator; current = current_pos; target = target_pos
         # <--- 使用 self.node_coords 和 self.local_map_graph ---
@@ -354,11 +359,11 @@ class Server():
         return route if route is not None else [current]
 
 
-    def calculate_coverage_ratio(self, real_map):
+    def calculate_coverage_ratio(self, real_map: np.ndarray) -> float:
         """計算目前全域地圖的覆蓋率。
 
         Args:
-            real_map (ndarray): 真實地圖 (y,x)。
+            real_map (np.ndarray): 真實地圖 (y,x)。
 
         Returns:
             float: 覆蓋率（0.0 到 1.0）。
