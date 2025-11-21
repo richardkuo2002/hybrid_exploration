@@ -34,6 +34,8 @@ FRONTIER_REBUILD_THRESHOLD = 50
 PIXEL_FREE = 255
 PIXEL_UNKNOWN = 127
 PIXEL_OCCUPIED = 1
+PIXEL_START = 208
+MAP_THRESHOLD = 150
 
 # 選點策略參數：在選點時對 utility 與 distance 做正規化並以權重合併
 # 0..1 的值，越靠近 1 表示越偏好效用（utility），越靠近 0 表示越偏好距離

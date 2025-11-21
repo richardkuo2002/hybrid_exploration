@@ -236,17 +236,20 @@ class Env():
             map_img_gray = skimage_io.imread(map_path, as_gray=True)
             if map_img_gray.dtype == float: map_img_int = (map_img_gray * 255).astype(np.uint8)
             else: map_img_int = map_img_gray.astype(np.uint8)
-            start_points = np.where(map_img_int == 208); start_location = None
+            from parameter import PIXEL_START
+            start_points = np.where(map_img_int == PIXEL_START); start_location = None
             if start_points[0].size > 0:
                 mid_idx = start_points[0].size // 2
                 start_location = np.array([start_points[1][mid_idx], start_points[0][mid_idx]])
-                logger.info(f"Start pos (208) found at {start_location} in {os.path.basename(map_path)}")
+                logger.info(f"Start pos ({PIXEL_START}) found at {start_location} in {os.path.basename(map_path)}")
             else:
-                logger.warning(f"Start pos (208) not found in {os.path.basename(map_path)}. Using default [100, 100].")
+                logger.warning(f"Start pos ({PIXEL_START}) not found in {os.path.basename(map_path)}. Using default [100, 100].")
                 start_location = np.array([100, 100])
-            final_map = np.ones_like(map_img_int, dtype=np.uint8) * 1
+            from parameter import PIXEL_OCCUPIED
+            final_map = np.ones_like(map_img_int, dtype=np.uint8) * PIXEL_OCCUPIED
             from parameter import PIXEL_FREE
-            final_map[map_img_int > 150] = PIXEL_FREE
+            from parameter import MAP_THRESHOLD
+            final_map[map_img_int > MAP_THRESHOLD] = PIXEL_FREE
             if start_location is not None:
                 y, x = start_location[1], start_location[0]
                 from parameter import PIXEL_FREE
