@@ -58,10 +58,22 @@ def run_single_experiment(
     else:
         finished_ep_scalar = np.nan
 
+    # Extract map ID from filename (e.g., "img_even_123.png" -> 123)
+    try:
+        import re
+        map_filename = worker.env.file_path
+        match = re.search(r"(\d+)", map_filename)
+        if match:
+            real_map_index = int(match.group(1))
+        else:
+            real_map_index = map_index # Fallback
+    except Exception:
+        real_map_index = map_index
+
     return {
         "run_index": run_index,
         "agent_num": agent_num,
-        "map_index": map_index,
+        "map_index": real_map_index,
         "success": bool(success),
         "finished_ep": finished_ep_scalar,
         "duration": dur,
@@ -165,7 +177,7 @@ def save_and_viz_results(
     csv_path: str = "results1.csv",
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
-    將每次實驗指標存成 CSV，並計算按 map_index 奇偶分組的摘要統計：
+    將每次實驗指標存成 CSV，並計算摘要統計：
       - finished_ep（中位數、平均）
       - duration（中位數、平均）
       - duration_per_ep（中位數、平均）
@@ -182,21 +194,25 @@ def save_and_viz_results(
         }
     )
 
-    df["parity"] = np.where(df["map_index"] % 2 == 0, "even", "odd")
+    # df["parity"] = np.where(df["map_index"] % 2 == 0, "even", "odd")
     # 避免除以 0（或 NaN），以 NaN 代表不可計算
     df["duration_per_ep"] = df["duration"] / df["finished_ep"].replace({0: np.nan})
 
     # 輸出 CSV
     df.to_csv(csv_path, index=False)
 
-    # 摘要統計
-    summary = df.groupby("parity").agg(
+    # 摘要統計 (不再分 parity)
+    summary = df.agg(
         {
             "finished_ep": ["count", "median", "mean"],
             "duration": ["median", "mean"],
             "duration_per_ep": ["median", "mean"],
         }
     )
+
+    print("\n=== Summary Statistics ===")
+    print(summary)
+    print("==========================\n")
 
     return df, summary
 
