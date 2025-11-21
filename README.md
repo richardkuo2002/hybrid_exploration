@@ -113,81 +113,43 @@ CLI 參數（新增）：
 
 若要批次執行多張地圖或多次實驗，請參考 `driver.py` 中的範例/註解，或修改 `worker.py` 以接受外部參數與輸出結果到指定目錄。
 
-## 平行化執行與測試 (Parallel execution & testing)
+## 平行化執行 (Parallel Execution)
 
-當你需要執行大量實驗（例如 100 次或更多）以比較參數或收集統計資料時，建議使用平行 (parallel) 執行來充分利用機器的多核心 CPU。下面提供幾種簡單做法與測試建議：
+`driver.py` 已內建平行化執行功能，會自動偵測系統核心數並使用 `multiprocessing` 進行加速。預設使用 `CPU核心數 - 1` 個進程。
 
-### 1) 使用 GNU parallel 或 xargs (最簡單，無需修改程式)
-- 依序喚起多個獨立的 `worker.py` 實例，每個實例負責一個 map 或一組實驗。適合單機多核心執行或 HPC 作業節點。
+### 執行方式
 
-範例（GNU parallel）：
 ```bash
-# 以 8 個並行 jobs 執行 100 次 worker.py (map index 可依序或是隨機)
-seq 0 99 | parallel -j 8 python worker.py --TEST_MAP_INDEX {#} --TEST_AGENT_NUM 3 --no-save_video
+# 執行 100 次實驗，自動平行化
+python driver.py --n-runs 100 --agent-min 3 --agent-max 3
 ```
 
-範例（xargs -P）：
+### 輸出結果
+
+- 執行過程中會顯示進度條與每次實驗的簡要結果。
+- 執行結束後會產生 `results1.csv`，包含每次實驗的詳細數據（是否成功、步數、耗時等）。
+- 同時會輸出簡單的統計摘要（平均步數、中位數等）。
+
+## 單元測試 (Unit Testing)
+
+本專案包含針對核心演算法的單元測試，位於 `tests/` 目錄下。
+
+### 測試範圍
+
+- `tests/test_utils.py`: 碰撞檢查 (`check_collision`)
+- `tests/test_graph.py`: 圖結構與路徑規劃 (`Graph`, `a_star`)
+- `tests/test_node.py`: 節點邏輯 (`Node`)
+
+### 如何執行測試
+
+使用 `unittest` 模組執行所有測試：
+
 ```bash
-seq 0 99 | xargs -P 8 -I {} python worker.py --TEST_MAP_INDEX {} --TEST_AGENT_NUM 3 --no-save_video
+conda run -n hybrid python -m unittest discover tests
 ```
 
-優點：不需改寫程式邏輯；能在不同容器或不同 CPU core 上同時執行多個獨立實驗。缺點：每個 worker.py 執行一整個 episode，若想要細粒度共同管理結果需額外匯總腳本（例如把 CSV 寫到同一個資料夾並合併）。
+或執行特定測試檔案：
 
-### 2) Python multiprocessing (在 driver.py 內實作)（需程式改動）
-如果想把平行化控制放在 `driver.py`，可以將 `run_batch` 改為將每次執行拆為子工作並用 `multiprocessing.Pool` map。以下是概念範例：
-
-```python
-from multiprocessing import Pool
-def _run_single(i):
-   worker = Worker(global_step=0, agent_num=agent_num, map_index=map_index)
-   return worker.run_episode(curr_episode=i)
-
-with Pool(processes=8) as p:
-   results = p.map(_run_single, range(n_runs))
-```
-
-優點：能集中管理所有實驗輸出、紀錄與錯誤處理（例如在主進程合併 CSV）；缺點：需改動程式，並注意共用資源（例如地圖檔讀取、相同輸出檔名的 IO 衝突）。
-
-### 3) 使用容器化或 job scheduler（Kubernetes / Slurm）
-如果你在叢集或 HPC 上執行，建議將 `worker.py` 打包為 container image（Docker），並在 scheduler 裡每個 job 啟動一個 container，這樣可避免不同實例間的環境差異。
-
-### 測試建議（如何驗證與收集結果）
-1. 微型 smoke test
-  - 先執行 `--n-runs=5` 或 `--n-runs=10` 的短測試，確認可執行且沒有崩潰再做大規模測試。示例：
-    ```bash
-    python driver.py --n-runs 5 --graph-update-interval 2
-    ```
-2. 性能測試（對比 GRAPH_UPDATE_INTERVAL）
-  - 目標：比較不同 interval 對 `full rebuild` 次數與整體執行時間的影響。
-  - 指標：`total runtime`, `avg step time`, `rebuild_count`, `rebuild_avg_time`, `coverage`。
-  - 方法：以 sequential/parallel 各跑 30~50 次（不同 `--graph-update-interval` 值：1、2、5、10），並把 `results.csv` 與 `server.last_rebuild_time/last_rebuild_step` 之類的度量存起來。示例：
-    ```bash
-    python driver.py --n-runs 30 --graph-update-interval 1
-    python driver.py --n-runs 30 --graph-update-interval 2
-    python driver.py --n-runs 30 --graph-update-interval 5
-    python driver.py --n-runs 30 --graph-update-interval 10
-    ```
-3. 數據收集與比較
-  - 建議：每個 run 最後輸出 CSV 並包含 `graph_update_interval`, `rebuild_time_last`, `rebuild_step_last`；更進階可以把 `Server` 在每次 rebuild 時追加一筆日誌或檔案。匯總後可用 pandas 分析、繪圖比較。
-4. 資源監控
-  - 當你用平行化跑大量 job 時，請觀察機器 CPU、記憶體、IO；當多個 worker 同時寫檔可能會遇到 IO 瓶頸。
-5. 可重現性與隨機性
-  - 若你要測試參數差異，請使用 `--seed` 或在 `driver.py` 製作 deterministic mapping，以減少隨機性對結果的影響。
-
-### 運行示例：平行化 + 收集結果
 ```bash
-# 使用 GNU parallel (8 jobs)，每個 job 執行 10 個 Worker
-seq 0 7 | parallel -j 8 python driver.py --n-runs 10 --graph-update-interval 4 --seed {#}
-
-# in bash, 收集結果（將多份 csv 合併）
-csvstack results*.csv > merged_results.csv
-python - <<PY
-import pandas as pd
-df = pd.read_csv('merged_results.csv')
-print(df.groupby('graph_update_interval')['duration'].agg(['median','mean']))
-PY
+conda run -n hybrid python tests/test_graph.py
 ```
-
----
-
-若你想要我直接把 `driver.run_batch` 改為支援 `--jobs` 旗標以在程式層面進行 multiprocessing，我可以進一步實作並 PR，或先請你同意要用哪種平行化方式（`multiprocessing.Pool` 或 `subprocess`/container-based）。
