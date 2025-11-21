@@ -456,25 +456,28 @@ class Graph_generator:
         start_index = self.find_closest_index_from_coords(node_coords, current)
         end_index = self.find_closest_index_from_coords(node_coords, destination)
         if start_index is None or end_index is None:
-            logger.warning(
+            # These conditions can occur due to invalid or missing current/destination
+            # (e.g., None or outside node set). Treat as non-fatal; log at debug level
+            # to avoid noisy logs during batch runs, but keep the information under DEBUG.
+            logger.debug(
                 f"Cannot find node index. Start:{start_index}, End:{end_index}"
             )
             return LARGE_DISTANCE, None
         start_node = tuple(node_coords[start_index])
         end_node = tuple(node_coords[end_index])
         if start_node not in graph.nodes or end_node not in graph.nodes:
-            logger.warning(
+            logger.debug(
                 f"Start ({start_node}) or End ({end_node}) node not in graph nodes set."
             )
             return LARGE_DISTANCE, None
         if start_node not in graph.edges or not graph.edges.get(start_node):
-            logger.warning(f"Start node {start_node} has no outgoing edges.")
+            logger.debug(f"Start node {start_node} has no outgoing edges.")
             if start_node == end_node:
                 return 0, [start_node]
             return LARGE_DISTANCE, None
         route, dist, _, _ = a_star(start_node, end_node, graph)
         if start_node != end_node and route is None:
-            logger.warning(f"A* failed path from {start_node} to {end_node}")
+            logger.debug(f"A* failed path from {start_node} to {end_node}")
             return dist, None
         if route is not None:
             route = list(map(tuple, route))
@@ -521,15 +524,24 @@ class Graph_generator:
         """
         if node_coords is None or len(node_coords) == 0:
             return None
+        if p is None:
+            # silently return None — caller will handle
+            return None
         if not isinstance(p, np.ndarray):
-            p = np.array(p)
+            try:
+                p = np.array(p)
+            except Exception:
+                # non-convertible: debug log and return None
+                logger.debug("Non-array target in find_closest_index_from_coords; returning None")
+                return None
+        # Ensure shape is (2,); if not, silently return None without warning noise
         if p.shape != (2,):
-            logger.warning(f"Invalid point shape {p.shape} in find_closest")
+            logger.debug(f"Invalid point shape {p.shape} in find_closest_index_from_coords; returning None")
             return None
         try:
             return np.argmin(np.linalg.norm(node_coords - p, axis=1))
         except ValueError:
-            logger.error("ValueError in find_closest_index", exc_info=True)
+            logger.exception("ValueError in find_closest_index")
             return None
 
     def find_k_neighbor_all_nodes(

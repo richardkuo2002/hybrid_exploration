@@ -420,7 +420,8 @@ class Server:
                             and np.array_equal(robot.planned_path[0], robot.position)
                         )
                     ):
-                        logger.warning(
+                        # Path planning failed — lower to debug to avoid noisy output during batch runs
+                        logger.debug(
                             f"[Server Step] Path plan FAILED for R{robot_idx} to {target_pos}"
                         )
                         robot.target_pos = None

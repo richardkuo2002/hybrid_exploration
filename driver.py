@@ -29,10 +29,11 @@ def run_single_experiment(
     """
     run_index, agent_num, map_index, graph_update_interval = args_tuple
 
-    # 每個 process 需有獨立的隨機狀態，雖然 multiprocessing 會自動處理，
-    # 但為了保險起見，可以根據 run_index 再次 re-seed (選擇性)
-    # np.random.seed((run_index + 1) * 12345 % 2**32)
-    # random.seed((run_index + 1) * 67890 % 2**32)
+    # 每個 process 需有獨立的隨機狀態，mulitprocessing 會複製父 process
+    # 但為了保險起見，在子 process 端明確地用 run_index 對其設定 deterministic seed
+    seed_val = ((run_index + 1) * 12345) % (2**32)
+    np.random.seed(seed_val)
+    random.seed((run_index + 1) * 67890 % (2**32))
 
     worker = Worker(
         global_step=0,
@@ -74,6 +75,7 @@ def run_batch(
     agent_max: int = 5,
     seed: Optional[int] = None,
     graph_update_interval: Optional[int] = None,
+    jobs: Optional[int] = None,
 ) -> Tuple[List[Any], List[bool], List[int], List[int], List[float]]:
     """
     跑多次實驗並回傳每次 finished_ep 列表 (平行化版本)
@@ -95,23 +97,39 @@ def run_batch(
     map_indices: List[int] = []
     durations: List[float] = []
 
-    # 偵測 CPU 核心數，保留一顆核心給系統
-    num_processes = max(1, multiprocessing.cpu_count() - 1)
+    # 偵測 CPU 核心數，默認為 cpu_count - 1，但可透過 jobs 參數覆蓋
+    max_possible_proc = multiprocessing.cpu_count()
+    default_num_proc = max(1, max_possible_proc - 1)
+    if jobs is None or jobs <= 0:
+        num_processes = min(default_num_proc, n_runs) if n_runs > 0 else default_num_proc
+    else:
+        # 允許使用者指定到整台機器的核心數上限
+        num_processes = min(max(1, jobs), max_possible_proc, n_runs)
     print(
         f"Starting batch run with {n_runs} episodes using {num_processes} processes..."
     )
 
     t0 = time.perf_counter()
 
-    with multiprocessing.Pool(processes=num_processes) as pool:
-        # 使用 imap_unordered 可以即時取得完成的結果，適合顯示進度
-        # 若需要順序，可最後再根據 run_index 排序，或改用 map
-        results = []
-        for i, res in enumerate(pool.imap_unordered(run_single_experiment, tasks)):
-            results.append(res)
-            print(
-                f"[{i+1}/{n_runs}] agents={res['agent_num']}, map={res['map_index']} -> success={res['success']}, finished_ep={res['finished_ep']}, time={res['duration']:.3f}s"
-            )
+    try:
+        with multiprocessing.Pool(processes=num_processes) as pool:
+            # 使用 imap_unordered 可以即時取得完成的結果，適合顯示進度
+            # 若需要順序，可最後再根據 run_index 排序，或改用 map
+            results = []
+            for i, res in enumerate(pool.imap_unordered(run_single_experiment, tasks)):
+                results.append(res)
+                print(
+                    f"[{i+1}/{n_runs}] agents={res['agent_num']}, map={res['map_index']} -> success={res['success']}, finished_ep={res['finished_ep']}, time={res['duration']:.3f}s"
+                )
+
+    except KeyboardInterrupt:
+        print("Batch run interrupted. Terminating pool...")
+        try:
+            if "pool" in locals():
+                pool.terminate()
+        except Exception:
+            pass
+        raise
 
     # 整理結果 (依 run_index 排序回原本順序，雖然統計上沒差，但為了對齊)
     results.sort(key=lambda x: x["run_index"])
@@ -313,6 +331,13 @@ if __name__ == "__main__":
         "--n-runs", type=int, default=100, help="Number of runs for batch"
     )
     parser.add_argument(
+        "--jobs",
+        "-j",
+        type=int,
+        default=None,
+        help="Number of parallel worker processes to use (default: cpu_count - 1)",
+    )
+    parser.add_argument(
         "--map-max-index", type=int, default=10000, help="Maximum map index"
     )
     parser.add_argument(
@@ -342,6 +367,7 @@ if __name__ == "__main__":
         agent_max=args.agent_max if hasattr(args, "agent_max") else AGENT_MAX,
         seed=args.seed if hasattr(args, "seed") else SEED,
         graph_update_interval=args.graph_update_interval,
+        jobs=args.jobs,
     )
 
     save_results_csv(finished_eps, successes, agent_used, map_indices, durations)

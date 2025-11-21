@@ -68,6 +68,9 @@ CLI 參數（新增）：
 
 - `--graph-update-interval` (`-g`): 覆蓋 `parameter.py` 中預設的 `GRAPH_UPDATE_INTERVAL` 設定（用於控制伺服器與機器人何時執行完整圖重建）。
 
+- `--jobs` (`-j`): 執行 `driver.py` 或批次處理時，可指定並行的 worker process 數量，預設為 `CPU核心數 - 1`（若無指定）。
+
+
   範例：
 
   - `python worker.py --graph-update-interval 5`  -> 每 5 步重建一次（若未指定，使用 `parameter.py` 預設）。
@@ -122,6 +125,12 @@ CLI 參數（新增）：
 ```bash
 # 執行 100 次實驗，自動平行化
 python driver.py --n-runs 100 --agent-min 3 --agent-max 3
+```
+
+範例：指定 6 個平行 worker 進行批次跑實驗：
+
+```bash
+python driver.py --n-runs 100 --jobs 6 --agent-min 3 --agent-max 3
 ```
 
 ### 輸出結果
