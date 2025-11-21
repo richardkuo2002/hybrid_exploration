@@ -7,17 +7,65 @@ matplotlib.use('Agg')  # 若不想跳出視窗，使用無GUI後端
 import matplotlib.pyplot as plt
 import logging
 import argparse
-import argparse
+import multiprocessing
+from functools import partial
 
 from worker import Worker
 
+def run_single_experiment(args_tuple):
+    """
+    執行單次實驗的頂層函式，供 multiprocessing 調用。
+    Args:
+        args_tuple (tuple): (run_index, agent_num, map_index, graph_update_interval)
+    Returns:
+        dict: 實驗結果
+    """
+    run_index, agent_num, map_index, graph_update_interval = args_tuple
+    
+    # 每個 process 需有獨立的隨機狀態，雖然 multiprocessing 會自動處理，
+    # 但為了保險起見，可以根據 run_index 再次 re-seed (選擇性)
+    # np.random.seed((run_index + 1) * 12345 % 2**32)
+    # random.seed((run_index + 1) * 67890 % 2**32)
+
+    worker = Worker(global_step=0, agent_num=agent_num, map_index=map_index, save_video=False, graph_update_interval=graph_update_interval)
+    
+    t_start = time.perf_counter()
+    success, finished_ep = worker.run_episode(curr_episode=run_index+1)
+    t_end = time.perf_counter()
+    
+    dur = t_end - t_start
+
+    # 處理 finished_ep 格式
+    if isinstance(finished_ep, (list, tuple, np.ndarray)) and len(finished_ep) > 0:
+        finished_ep_scalar = finished_ep[-1]
+    elif isinstance(finished_ep, (int, float)):
+        finished_ep_scalar = finished_ep
+    else:
+        finished_ep_scalar = np.nan
+
+    return {
+        "run_index": run_index,
+        "agent_num": agent_num,
+        "map_index": map_index,
+        "success": bool(success),
+        "finished_ep": finished_ep_scalar,
+        "duration": dur
+    }
+
 def run_batch(n_runs=100, map_max_index=1000, agent_min=3, agent_max=5, seed=None, graph_update_interval=None):
     """
-    跑多次實驗並回傳每次 finished_ep 列表
+    跑多次實驗並回傳每次 finished_ep 列表 (平行化版本)
     """
     if seed is not None:
         random.seed(seed)
         np.random.seed(seed)
+
+    # 準備實驗參數列表
+    tasks = []
+    for i in range(n_runs):
+        agent_num = random.randint(agent_min, agent_max)
+        map_index = random.randint(0, map_max_index)
+        tasks.append((i, agent_num, map_index, graph_update_interval))
 
     finished_eps = []
     successes = []
@@ -25,34 +73,33 @@ def run_batch(n_runs=100, map_max_index=1000, agent_min=3, agent_max=5, seed=Non
     map_indices = []
     durations = []
 
+    # 偵測 CPU 核心數，保留一顆核心給系統
+    num_processes = max(1, multiprocessing.cpu_count() - 1)
+    print(f"Starting batch run with {n_runs} episodes using {num_processes} processes...")
+
     t0 = time.perf_counter()
 
-    for i in range(n_runs):
-        agent_num = random.randint(agent_min, agent_max)  # 3~5（含上下界）
-        map_index = random.randint(0, map_max_index)   # 0~map_max_index（含上下界）
-        # 若需要固定測資以便重現，可手動啟用： map_index = i+1
-        worker = Worker(global_step=0, agent_num=agent_num, map_index=map_index, save_video=False, graph_update_interval=graph_update_interval)
-        t_start = time.perf_counter()
-        success, finished_ep = worker.run_episode(curr_episode=i+1)
-        t_end = time.perf_counter()
+    with multiprocessing.Pool(processes=num_processes) as pool:
+        # 使用 imap_unordered 可以即時取得完成的結果，適合顯示進度
+        # 若需要順序，可最後再根據 run_index 排序，或改用 map
+        results = []
+        for i, res in enumerate(pool.imap_unordered(run_single_experiment, tasks)):
+            results.append(res)
+            print(f"[{i+1}/{n_runs}] agents={res['agent_num']}, map={res['map_index']} -> success={res['success']}, finished_ep={res['finished_ep']}, time={res['duration']:.3f}s")
 
-        dur = t_end - t_start
+    # 整理結果 (依 run_index 排序回原本順序，雖然統計上沒差，但為了對齊)
+    results.sort(key=lambda x: x['run_index'])
 
-        # 將 finished_ep 標準化為 scalar（若 worker 回傳 list/tuple，取最後一筆）
-        if isinstance(finished_ep, (list, tuple, np.ndarray)) and len(finished_ep) > 0:
-            finished_ep_scalar = finished_ep[-1]
-        elif isinstance(finished_ep, (int, float)):
-            finished_ep_scalar = finished_ep
-        else:
-            finished_ep_scalar = np.nan
-        finished_eps.append(finished_ep_scalar)
-        successes.append(bool(success))
-        agent_used.append(agent_num)
-        map_indices.append(map_index)
-        durations.append(dur)
+    for res in results:
+        finished_eps.append(res['finished_ep'])
+        successes.append(res['success'])
+        agent_used.append(res['agent_num'])
+        map_indices.append(res['map_index'])
+        durations.append(res['duration'])
 
-        print(f"[{i+1}/{n_runs}] agents={agent_num}, map={map_index} -> success={success}, finished_ep={finished_ep}, time={dur:.3f}s")
-    
+    total_time = time.perf_counter() - t0
+    print(f"Batch run completed in {total_time:.2f}s")
+
     save_and_viz_results(finished_eps, successes, agent_used, map_indices, durations, csv_path="results1.csv")
 
     return finished_eps, successes, agent_used, map_indices, durations
