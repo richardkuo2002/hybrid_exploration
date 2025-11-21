@@ -1,3 +1,5 @@
+import math
+
 SENSOR_RANGE=80
 SERVER_COMM_RANGE = 160
 ROBOT_COMM_RANGE = 80
@@ -44,3 +46,11 @@ SELECTION_UTILITY_WEIGHT = 0.7
 SELECTION_USE_PATH_COST = False
 # 當 SELECTION_USE_PATH_COST 為 True 時，先以 Euclid 排序並取 top K 再跑 A*
 SELECTION_PATH_COST_TOPK = 5
+
+# --- Sensor Parameters ---
+SENSOR_ANGLE_INC = 0.5 / 180 * math.pi
+MAX_SENSOR_STEPS = 10000
+
+# --- Graph Generation Parameters ---
+LARGE_DISTANCE = 1e5
+VISITED_DIST_THRESHOLD = 10

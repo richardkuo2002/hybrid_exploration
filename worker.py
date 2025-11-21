@@ -6,6 +6,7 @@ import datetime
 import argparse
 import logging
 import os
+from typing import Tuple, Optional
 
 from parameter import *
 from robot import Robot
@@ -14,7 +15,7 @@ from env import Env
 logger = logging.getLogger(__name__)
 
 class Worker:
-    def __init__(self, global_step=0, agent_num=3, map_index=0, plot=False, save_video=True, force_sync_debug=False, graph_update_interval=None):
+    def __init__(self, global_step: int = 0, agent_num: int = 3, map_index: int = 0, plot: bool = False, save_video: bool = True, force_sync_debug: bool = False, graph_update_interval: Optional[int] = None) -> None:
         """建立 Worker 實例，初始化環境與機器人位置。
 
         Args:
@@ -23,6 +24,8 @@ class Worker:
             map_index (int): 要使用的地圖索引。
             plot (bool): 是否啟用即時繪圖。
             save_video (bool): 是否儲存模擬影片。
+            force_sync_debug (bool): 是否強制同步除錯。
+            graph_update_interval (Optional[int]): 圖更新間隔。
 
         Returns:
             None
@@ -46,14 +49,14 @@ class Worker:
                 elif not np.array_equal(robot.position, robot.movement_history[-1]):
                     robot.movement_history.append(robot.position.copy())
 
-    def run_episode(self, curr_episode=0):
+    def run_episode(self, curr_episode: int = 0) -> Tuple[bool, int]:
         """執行一個 episode 的主迴圈。
 
         Args:
             curr_episode (int): 當前 episode 編號。
 
         Returns:
-            tuple:
+            Tuple[bool, int]:
                 success (bool): 是否完成探索 (True=完成)。
                 step (int): 結束時的步數或 timeout 步數。
         """

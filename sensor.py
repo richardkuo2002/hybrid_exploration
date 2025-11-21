@@ -6,34 +6,35 @@
 import numpy as np
 import copy
 from numba import jit # <--- 1. 匯入 jit
-from parameter import OBSTACLE_THICKNESS, PIXEL_FREE, PIXEL_OCCUPIED, PIXEL_UNKNOWN
+from parameter import OBSTACLE_THICKNESS, PIXEL_FREE, PIXEL_OCCUPIED, PIXEL_UNKNOWN, SENSOR_ANGLE_INC, MAX_SENSOR_STEPS
 # 假設 collision_check 已經在 utils.py 中被 @jit 修飾
 from utils import check_collision # 確保從 utils 匯入的是 JIT 版本
+from typing import List, Tuple, Optional, Union
 
 # 注意：因為 sensor_work 呼叫了 check_collision，
 # 且 check_collision 被 JIT 編譯，
 # 所以 sensor_work 也必須被 JIT 編譯才能高效呼叫。
 @jit(nopython=True) # <--- 2. 加上 JIT 裝飾器
-def sensor_work(robot_position, sensor_range, robot_local_map, real_map):
+def sensor_work(robot_position: np.ndarray, sensor_range: Union[float, int], robot_local_map: np.ndarray, real_map: np.ndarray) -> np.ndarray:
     """擴展並更新機器人本地地圖（JIT 編譯函式）。
 
     使用射線掃描（簡化的 Lidar 模型）從 robot_position 朝多個角度掃描，
     將 real_map 中可見的 free/obstacle 資訊寫入並回傳更新後的 local map。
 
     Args:
-        robot_position (array-like[2]): 機器人位置 [x, y]（可為浮點或整數）。
-        sensor_range (float|int): 感測半徑（像素單位）。
-        robot_local_map (ndarray): 當前機器人的信念地圖（2D numpy 陣列）。
-        real_map (ndarray): 真實地圖（2D numpy 陣列），用於模擬感測回傳。
+        robot_position (np.ndarray): 機器人位置 [x, y]（可為浮點或整數）。
+        sensor_range (Union[float, int]): 感測半徑（像素單位）。
+        robot_local_map (np.ndarray): 當前機器人的信念地圖（2D numpy 陣列）。
+        real_map (np.ndarray): 真實地圖（2D numpy 陣列），用於模擬感測回傳。
 
     Returns:
-        ndarray: 更新後的 local map 副本（2D numpy 陣列）。
+        np.ndarray: 更新後的 local map 副本（2D numpy 陣列）。
 
     Raises:
         本函式為 nopython 模式，內部錯誤通常由 numba 捕捉；上層呼叫可捕捉例外。
     """
     # 角度增量需要是常數，或者傳入
-    sensor_angle_inc = 0.5 / 180 * np.pi
+    sensor_angle_inc = SENSOR_ANGLE_INC
     sensor_angle = 0.0 # 使用浮點數
     x0 = robot_position[0]
     y0 = robot_position[1]
@@ -69,7 +70,7 @@ def sensor_work(robot_position, sensor_range, robot_local_map, real_map):
 # 這裡我們先創建一個模擬的 JIT 內部輔助函式，它執行類似 check_collision 的邏輯
 # 但直接修改傳入的 local_map_copy
 @jit(nopython=True)
-def _sensor_collision_check_wrapper(x0_f, y0_f, x1_f, y1_f, real_map, local_map_copy, map_height, map_width, sensor_range):
+def _sensor_collision_check_wrapper(x0_f: float, y0_f: float, x1_f: float, y1_f: float, real_map: np.ndarray, local_map_copy: np.ndarray, map_height: int, map_width: int, sensor_range: Union[float, int]) -> np.ndarray:
     """內部 JIT 輔助：沿線檢查並在 local_map_copy 上標記可見像素。
 
     使用整數化後的 Bresenham-like 步進從 (x0,y0) 朝 (x1,y1) 前進，
@@ -78,14 +79,14 @@ def _sensor_collision_check_wrapper(x0_f, y0_f, x1_f, y1_f, real_map, local_map_
 
     Args:
         x0_f, y0_f, x1_f, y1_f (float): 起終點座標（浮點，函式內會 round 為整數）。
-        real_map (ndarray): 真實地圖陣列，用於查詢像素值。
-        local_map_copy (ndarray): 要修改並回傳的本地地圖副本。
+        real_map (np.ndarray): 真實地圖陣列，用於查詢像素值。
+        local_map_copy (np.ndarray): 要修改並回傳的本地地圖副本。
         map_height (int): 地圖高度（rows）。
         map_width (int): 地圖寬度（cols）。
-        sensor_range (float|int): 感測半徑（像素）。
+        sensor_range (Union[float, int]): 感測半徑（像素）。
 
     Returns:
-        ndarray: 修改後的 local_map_copy（回傳同一參考）。
+        np.ndarray: 修改後的 local_map_copy（回傳同一參考）。
 
     Raises:
         無：函式在 nopython 模式下執行，錯誤由上層或 numba 處理。
@@ -108,7 +109,7 @@ def _sensor_collision_check_wrapper(x0_f, y0_f, x1_f, y1_f, real_map, local_map_
     dy *= 2
 
     # Numba 不支援 sys.maxsize, 用一個大數
-    max_steps = 10000 
+    max_steps = MAX_SENSOR_STEPS
     steps = 0
 
     # collision_flag 計算連續 obstacle 的次數
