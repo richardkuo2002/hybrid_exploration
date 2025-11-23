@@ -104,6 +104,14 @@ class Graph_generator:
                 (np.array(robot_location).reshape(1, 2), node_coords)
             )
             self.node_coords = np.unique(node_coords, axis=0)
+            
+            # Fix: Populate nodes_list
+            self.nodes_list = []
+            current_frontiers = (
+                frontiers if frontiers is not None else np.array([]).reshape(0, 2)
+            )
+            for coords in self.node_coords:
+                self.nodes_list.append(Node(coords, current_frontiers, robot_map))
 
         if len(self.node_coords) > 0:
             self.find_k_neighbor_all_nodes(robot_map, update_dense=True)
@@ -265,10 +273,55 @@ class Graph_generator:
                 new_node = Node(coords, current_frontiers, robot_map)
                 self.nodes_list.append(new_node)
 
-        # 6. 重建圖邊緣
-        self.graph = Graph()
+        # 6. 增量更新圖邊緣 (Incremental Edge Update)
+        # 找出需要更新邊緣的節點：
+        # 1. 新增的節點 (nodes_to_add)
+        # 2. 位於機器人感測範圍附近的節點 (可能因障礙物變動而受影響)
+        
+        affected_indices = []
+        nodes_to_add_set = set(map(tuple, nodes_to_add))
+        
+        # 定義受影響半徑 (感測半徑 + 餘裕)
+        affected_radius = self.sensor_range + 10
+        
+        robot_positions_arr = []
+        if all_robot_positions:
+            robot_positions_arr = [p for p in all_robot_positions if p is not None]
+        
         if len(self.node_coords) > 0:
-            self.find_k_neighbor_all_nodes(robot_map, update_dense=True)
+            # 優化：一次性遍歷找出所有受影響節點索引
+            for i, coord in enumerate(self.node_coords):
+                coord_tuple = tuple(coord)
+                is_affected = False
+                
+                # 條件 1: 新增節點
+                if coord_tuple in nodes_to_add_set:
+                    is_affected = True
+                
+                # 條件 2: 附近有機器人 (僅對非新增節點檢查，避免重複)
+                if not is_affected and robot_positions_arr:
+                    # 向量化計算到所有機器人的距離
+                    dists = np.linalg.norm(coord - robot_positions_arr, axis=1)
+                    if np.any(dists < affected_radius):
+                        is_affected = True
+                
+                if is_affected:
+                    affected_indices.append(i)
+                    # 清除舊邊緣 (雙向)，因為障礙物可能改變了連通性
+                    # 注意：對於新增節點，clear_edge 無副作用
+                    if coord_tuple in self.graph.nodes:
+                        self.graph.clear_edge(coord_tuple, remove_bidirectional_edges=True)
+
+            # 執行局部 KNN 更新
+            if affected_indices:
+                logger.debug(f"Incremental graph update: {len(affected_indices)}/{len(self.node_coords)} nodes affected.")
+                self.find_k_neighbor_all_nodes(
+                    robot_map, 
+                    update_dense=True, 
+                    target_indices=affected_indices
+                )
+            else:
+                logger.debug("No nodes affected for incremental update.")
         else:
             logger.warning("No nodes available in rebuild_graph_structure.")
 
@@ -552,9 +605,13 @@ class Graph_generator:
         global_graph: Optional[Graph] = None,
         global_graph_knn_dist_max: float = GLOBAL_GRAPH_KNN_RAD,
         global_graph_knn_dist_min: float = CUR_AGENT_KNN_RAD,
+        target_indices: Optional[List[int]] = None,
     ) -> None:
         """為每個 node 找 k 個鄰居並建立 graph.edges（包含 global graph 的補充）。
-
+        
+        Args:
+            target_indices: 若提供，僅更新這些索引對應的節點 (Incremental Update)。
+        
         Optimized version: Vectorized KDTree query.
         """
         if self.node_coords is None or len(self.node_coords) == 0:
@@ -578,10 +635,18 @@ class Graph_generator:
         num_nodes = len(self.node_coords)
         k_query = min(self.k_size + 1, num_nodes)  # +1 because it finds itself
 
+        # Determine query points and loop range based on target_indices
+        if target_indices is not None:
+            query_points = self.node_coords[target_indices]
+            loop_indices = target_indices
+        else:
+            query_points = self.node_coords
+            loop_indices = range(num_nodes)
+
         if k_query > 1:
             try:
-                # Vectorized query: (N, k)
-                dists_all, indices_all = kd_tree.query(self.node_coords, k=k_query)
+                # Vectorized query: (N_query, k)
+                dists_all, indices_all = kd_tree.query(query_points, k=k_query)
             except (ValueError, IndexError) as e:
                 logger.warning(f"KDTree query failed k={k_query}: {e}")
                 return
@@ -589,8 +654,9 @@ class Graph_generator:
             return
 
         # Iterate over nodes to process edges
-        for i in range(num_nodes):
-            p = self.node_coords[i]
+        # 注意：enumerate(loop_indices) 的 i 是 0..M，idx 是真實索引
+        for i, idx in enumerate(loop_indices):
+            p = self.node_coords[idx]
             p_tuple = tuple(p)
 
             # --- Global Graph Logic (Preserved) ---
