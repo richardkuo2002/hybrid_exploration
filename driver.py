@@ -9,6 +9,8 @@ matplotlib.use("Agg")  # 若不想跳出視窗，使用無GUI後端
 import argparse
 import logging
 import multiprocessing
+import datetime
+import os
 from functools import partial
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -44,7 +46,7 @@ def run_single_experiment(
     )
 
     t_start = time.perf_counter()
-    success, finished_ep = worker.run_episode(curr_episode=run_index + 1)
+    success, finished_ep, metrics = worker.run_episode(curr_episode=run_index + 1)
     t_end = time.perf_counter()
 
     dur = t_end - t_start
@@ -77,6 +79,10 @@ def run_single_experiment(
         "success": bool(success),
         "finished_ep": finished_ep_scalar,
         "duration": dur,
+        "coverage": metrics.get("coverage", 0.0),
+        "total_distance": metrics.get("total_distance", 0.0),
+        "replanning_count": metrics.get("replanning_count", 0),
+        "map_merge_count": metrics.get("map_merge_count", 0),
     }
 
 
@@ -88,6 +94,7 @@ def run_batch(
     seed: Optional[int] = None,
     graph_update_interval: Optional[int] = None,
     jobs: Optional[int] = None,
+    output_dir: str = "results",
 ) -> Tuple[List[Any], List[bool], List[int], List[int], List[float]]:
     """
     跑多次實驗並回傳每次 finished_ep 列表 (平行化版本)
@@ -108,6 +115,10 @@ def run_batch(
     agent_used: List[int] = []
     map_indices: List[int] = []
     durations: List[float] = []
+    coverages: List[float] = []
+    total_distances: List[float] = []
+    replanning_counts: List[int] = []
+    map_merge_counts: List[int] = []
 
     # 偵測 CPU 核心數，默認為 cpu_count - 1，但可透過 jobs 參數覆蓋
     max_possible_proc = multiprocessing.cpu_count()
@@ -152,9 +163,22 @@ def run_batch(
         agent_used.append(res["agent_num"])
         map_indices.append(res["map_index"])
         durations.append(res["duration"])
+        coverages.append(res["coverage"])
+        total_distances.append(res["total_distance"])
+        replanning_counts.append(res["replanning_count"])
+        map_merge_counts.append(res["map_merge_count"])
 
     total_time = time.perf_counter() - t0
     print(f"Batch run completed in {total_time:.2f}s")
+
+    # Generate dynamic filename
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    g_str = f"_g{graph_update_interval}" if graph_update_interval is not None else ""
+    filename_base = f"results_runs{n_runs}_agents{agent_min}-{agent_max}{g_str}_{timestamp}"
+    
+    os.makedirs(output_dir, exist_ok=True)
+    csv_path = os.path.join(output_dir, f"{filename_base}.csv")
+    png_path = os.path.join(output_dir, f"{filename_base}.png")
 
     save_and_viz_results(
         finished_eps,
@@ -162,7 +186,12 @@ def run_batch(
         agent_used,
         map_indices,
         durations,
-        csv_path="results1.csv",
+        coverages,
+        total_distances,
+        replanning_counts,
+        map_merge_counts,
+        csv_path=csv_path,
+        png_path=png_path,
     )
 
     return finished_eps, successes, agent_used, map_indices, durations
@@ -174,7 +203,12 @@ def save_and_viz_results(
     agent_used: List[int],
     map_indices: List[int],
     durations: List[float],
-    csv_path: str = "results1.csv",
+    coverages: List[float],
+    total_distances: List[float],
+    replanning_counts: List[int],
+    map_merge_counts: List[int],
+    csv_path: str = "results.csv",
+    png_path: Optional[str] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     將每次實驗指標存成 CSV，並計算摘要統計：
@@ -191,6 +225,10 @@ def save_and_viz_results(
             "agent_used": agent_used,
             "map_index": map_indices,
             "duration": durations,
+            "coverage": coverages,
+            "total_distance": total_distances,
+            "replanning_count": replanning_counts,
+            "map_merge_count": map_merge_counts,
         }
     )
 
@@ -200,6 +238,16 @@ def save_and_viz_results(
 
     # 輸出 CSV
     df.to_csv(csv_path, index=False)
+    print(f"Saved results to {csv_path}")
+
+    # 畫圖 (若有指定路徑)
+    if png_path:
+        plot_boxplots_finished_duration(
+            finished_eps, 
+            durations, 
+            output_png=png_path, 
+            title=f"Batch Results (N={len(finished_eps)})"
+        )
 
     # 摘要統計 (不再分 parity)
     summary = df.agg(
@@ -207,6 +255,9 @@ def save_and_viz_results(
             "finished_ep": ["count", "median", "mean"],
             "duration": ["median", "mean"],
             "duration_per_ep": ["median", "mean"],
+            "coverage": ["mean", "std"],
+            "total_distance": ["mean", "std"],
+            "replanning_count": ["mean", "std"],
         }
     )
 
@@ -365,6 +416,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--seed", type=int, default=42, help="Random seed (default: 42)"
     )
+    parser.add_argument(
+        "--output-dir", type=str, default="results", help="Directory to save results"
+    )
     args = parser.parse_args()
 
     N_RUNS = args.n_runs
@@ -384,9 +438,11 @@ if __name__ == "__main__":
         seed=args.seed if hasattr(args, "seed") else SEED,
         graph_update_interval=args.graph_update_interval,
         jobs=args.jobs,
+        output_dir=args.output_dir,
     )
 
-    save_results_csv(finished_eps, successes, agent_used, map_indices, durations)
+    # save_results_csv is redundant now as run_batch calls save_and_viz_results
+    # save_results_csv(finished_eps, successes, agent_used, map_indices, durations)
 
     # 印出簡單統計
     arr = np.array(finished_eps, dtype=float)

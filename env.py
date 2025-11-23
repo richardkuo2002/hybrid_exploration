@@ -15,6 +15,7 @@ from skimage.measure import block_reduce
 
 from graph_generator import Graph_generator
 from parameter import *
+from utils import check_collision, merge_maps_jit
 from robot import Robot
 from sensor import *
 from server import Server
@@ -260,30 +261,38 @@ class Env:
         Returns:
             np.ndarray: 合併後的地圖。
         """
-        from parameter import PIXEL_UNKNOWN
+        from parameter import PIXEL_FREE, PIXEL_OCCUPIED, PIXEL_UNKNOWN
 
-        merged_map = np.ones_like(self.real_map) * PIXEL_UNKNOWN
+        # Filter valid maps
         valid_maps = [m for m in maps_to_merge if isinstance(m, np.ndarray)]
+        
+        # Initialize merged map with UNKNOWN
+        merged_map = np.full_like(self.real_map, PIXEL_UNKNOWN)
+        
         if not valid_maps:
             return merged_map
 
-        # Aggregate observations across maps. We want obstacles to override free
-        # (so obstacles are preserved after merging). Compute presence masks
-        # and then assign free first, obstacles last to ensure dominance.
-        any_obs = np.zeros_like(self.real_map, dtype=bool)
-        any_free = np.zeros_like(self.real_map, dtype=bool)
-        for belief in valid_maps:
-            from parameter import PIXEL_FREE, PIXEL_OCCUPIED
-
-            any_obs |= belief == PIXEL_OCCUPIED
-            any_free |= belief == PIXEL_FREE
-
-        from parameter import PIXEL_FREE
-
-        merged_map[any_free] = PIXEL_FREE
-        from parameter import PIXEL_OCCUPIED
-
-        merged_map[any_obs] = PIXEL_OCCUPIED
+        # Use Numba-optimized merge
+        # Numba needs a typed list or tuple of arrays. List is fine.
+        # Ensure all maps are same shape as real_map (should be guaranteed by logic)
+        
+        # Call JIT function
+        # Note: Numba might recompile if list length changes often, 
+        # but for fixed agent count it should be stable.
+        # Passing list of arrays to Numba JIT function works if they are same type/dim.
+        
+        # To be safe with Numba's typed list requirement for some versions:
+        # We pass a simple list. If Numba complains, we might need TypedList.
+        # But usually list of arrays is supported in recent Numba.
+        
+        merged_map = merge_maps_jit(
+            valid_maps, 
+            merged_map, 
+            PIXEL_FREE, 
+            PIXEL_OCCUPIED, 
+            PIXEL_UNKNOWN
+        )
+        
         return merged_map
 
     def update_robot_local_map(

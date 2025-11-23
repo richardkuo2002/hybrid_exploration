@@ -84,6 +84,8 @@ class Robot:
             )
 
         self.target_gived_by_server = False
+        self.handoff_cooldown = 0
+        self.old_frontiers = None  # Initialize old_frontiers
         self.last_position_in_server_range = start_position
         self.out_range_step = 0
         self.stay_count = 0
@@ -109,8 +111,47 @@ class Robot:
         self.return_replan_attempts = 0
         self.return_fail_cooldown = 0
         # 新增 handoff 冷卻計數器
-        self.handoff_cooldown = 0
+        # self.handoff_cooldown = 0 # Moved up
         # self.debug removed
+
+    def sense_and_update_graph(
+        self,
+        real_map: np.ndarray,
+        find_frontier_func: Any,
+    ) -> None:
+        """執行感測與圖更新（可平行化，無交互）。
+
+        Args:
+            real_map (np.ndarray): 真實地圖。
+            find_frontier_func (callable): 尋找 frontier 的函式。
+        """
+        # --- 在每步一開始遞減 handoff_cooldown ---
+        if self.handoff_cooldown > 0:
+            self.handoff_cooldown -= 1
+
+        # --- 1. 感測 ---
+        self.local_map = sensor_work(
+            self.position, self.sensor_range, self.local_map, real_map
+        )
+
+        # --- 2. 更新 Frontier 與 Graph ---
+        # 尋找 frontier
+        frontiers = find_frontier_func(self.local_map)
+        self.frontiers = frontiers
+
+        # 更新 Graph (增量更新)
+        # 注意：這裡不傳入 all_robot_positions，因為平行化時可能會有競爭
+        # 如果需要考慮其他機器人位置對圖的影響，建議在 interaction 階段處理，或使用唯讀副本
+        # 暫時傳入 None，或僅傳入自己 (self.position)
+        # 為了安全，這裡先只傳入自己，避免讀取其他機器人位置造成 Race Condition
+        self.graph_generator.rebuild_graph_structure(
+            self.local_map,
+            self.frontiers,
+            self.old_frontiers,
+            self.position,
+            all_robot_positions=[self.position],  # 簡化：只考慮自己，避免競爭
+        )
+        self.old_frontiers = self.frontiers
 
     def update_local_awareness(
         self,
@@ -120,26 +161,24 @@ class Robot:
         find_frontier_func: Any,
         merge_maps_func: Any,
     ) -> None:
-        """執行感知、地圖合併、機器人交互與節點/效用更新（一步）。
+        """(Legacy Wrapper) 執行感知、地圖合併、機器人交互與節點/效用更新（一步）。"""
+        self.sense_and_update_graph(real_map, find_frontier_func)
+        self.interact_and_merge(all_robots, server, merge_maps_func)
+
+    def interact_and_merge(
+        self,
+        all_robots: List["Robot"],
+        server: Any,
+        merge_maps_func: Any,
+    ) -> None:
+        """執行機器人交互、地圖合併與 Server 狀態更新（需循序執行）。
 
         Args:
-            real_map (np.ndarray): 真實地圖 (y,x)。
             all_robots (List[Robot]): 所有機器人清單。
             server (Server): 伺服器物件。
-            find_frontier_func (callable): 用於尋找 frontier 的函式。
             merge_maps_func (callable): 用於合併地圖的函式。
-
-        Returns:
-            None
         """
-        # --- 在每步一開始遞減 handoff_cooldown ---
-        if self.handoff_cooldown > 0:
-            self.handoff_cooldown -= 1
-
-        # --- 1. 感測與地圖合併 ---
-        self.local_map = sensor_work(
-            self.position, self.sensor_range, self.local_map, real_map
-        )
+        # --- 更新 Server 範圍狀態 ---
         dist_to_server = np.linalg.norm(self.position - server.position)
         was_in_range = self.is_in_server_range
         self.is_in_server_range = dist_to_server < SERVER_COMM_RANGE
@@ -292,206 +331,126 @@ class Robot:
         elif self.is_in_server_range:
             self.info_gain_history.clear()
 
-        # --- 3. 更新 Frontiers ---
-        self.downsampled_map = block_reduce(
-            self.local_map.copy(),
-            block_size=(self.resolution, self.resolution),
-            func=np.min,
-        )
-        new_frontiers = find_frontier_func(self.downsampled_map)
-
-        # --- 4. 更新節點圖 (間歇性) ---
-        self.graph_update_counter += 1
+        # --- 3. 更新 Frontiers (Legacy Code Removed) ---
+        # This logic is now handled in sense_and_update_graph
+        # self.downsampled_map = ...
+        # new_frontiers = find_frontier_func(self.downsampled_map)
+        
+        # --- 4. 更新節點圖 (Legacy Code Removed) ---
+        # This logic is now handled in sense_and_update_graph
+        # self.graph_update_counter += 1
         # 首先嘗試每步做輕量級的 node utility 更新，並把 graph.edges 回寫到 local_map_graph
-        logger.debug(
-            f"[R{self.robot_id} Awareness] Attempting lightweight update_node_utilities..."
-        )
-        try:
-            node_utility, guidepost = self.graph_generator.update_node_utilities(
-                self.local_map,
-                new_frontiers,
-                self.frontiers,
-                caller=f'robot-{getattr(self, "robot_id", -1)}',
-            )
-            self.node_utility = node_utility
-            self.guidepost = guidepost
-            if hasattr(self.graph_generator, "graph") and hasattr(
-                self.graph_generator.graph, "edges"
-            ):
-                # 如果 generator 持有 graph.edges，就把它同步回 robot 端，供 local path planning 使用
-                try:
-                    if (
-                        isinstance(self.graph_generator.graph.edges, dict)
-                        and len(self.graph_generator.graph.edges) > 0
-                    ):
-                        self.local_map_graph = self.graph_generator.graph.edges
-                    else:
-                        # 若 graph.edges 空，保留現狀，稍後判斷是否需要重建
-                        pass
-                except Exception:
-                    pass
-        except Exception as e:
-            if self.debug_mode:
-                raise
-            logger.error(
-                f"Robot {self.robot_id} failed update_node_utilities: {e}",
-                exc_info=True,
-            )
 
         # Fallback: if robot is in server range and graph_generator produced no candidates,
         # but server has candidates, copy them (deepcopy) to robot to allow selection/assignment.
-        try:
+        if (
+            self.is_in_server_range
+            and hasattr(server, "graph_generator")
+            and hasattr(server.graph_generator, "target_candidates")
+        ):
+            own_cands = getattr(self.graph_generator, "target_candidates", None)
+            server_cands = getattr(
+                server.graph_generator, "target_candidates", None
+            )
             if (
-                self.is_in_server_range
-                and hasattr(server, "graph_generator")
-                and hasattr(server.graph_generator, "target_candidates")
-            ):
-                own_cands = getattr(self.graph_generator, "target_candidates", None)
-                server_cands = getattr(
-                    server.graph_generator, "target_candidates", None
-                )
-                if (
-                    (
-                        own_cands is None
-                        or (
-                            isinstance(own_cands, (list, tuple, np.ndarray))
-                            and len(own_cands) == 0
-                        )
+                (
+                    own_cands is None
+                    or (
+                        isinstance(own_cands, (list, tuple, np.ndarray))
+                        and len(own_cands) == 0
                     )
-                    and server_cands is not None
-                    and len(server_cands) > 0
-                ):
-                    # Only emit extra diagnostics when mismatch occurs (server has candidates, robot has none)
+                )
+                and server_cands is not None
+                and len(server_cands) > 0
+            ):
+                # Only emit extra diagnostics when mismatch occurs (server has candidates, robot has none)
+                try:
+                    server_frontiers = getattr(server, "frontiers", None)
+                    robot_frontiers = (
+                        new_frontiers
+                        if "new_frontiers" in locals()
+                        else getattr(self, "frontiers", None)
+                    )
+                    srv_f_len = (
+                        len(server_frontiers) if server_frontiers is not None else 0
+                    )
+                    rbt_f_len = (
+                        len(robot_frontiers) if robot_frontiers is not None else 0
+                    )
+                    srv_sample = (
+                        server_frontiers[:3].tolist()
+                        if server_frontiers is not None
+                        and len(server_frontiers) > 0
+                        else []
+                    )
+                    rbt_sample = (
+                        robot_frontiers[:3].tolist()
+                        if robot_frontiers is not None and len(robot_frontiers) > 0
+                        else []
+                    )
+                    srv_map_shape = (
+                        getattr(server, "global_map", None).shape
+                        if getattr(server, "global_map", None) is not None
+                        else None
+                    )
+                    rbt_map_shape = (
+                        getattr(self, "local_map", None).shape
+                        if getattr(self, "local_map", None) is not None
+                        else None
+                    )
+                    # concise fingerprint: sum of coords (stable small-int) to help quick diffing
                     try:
-                        server_frontiers = getattr(server, "frontiers", None)
-                        robot_frontiers = (
-                            new_frontiers
-                            if "new_frontiers" in locals()
-                            else getattr(self, "frontiers", None)
-                        )
-                        srv_f_len = (
-                            len(server_frontiers) if server_frontiers is not None else 0
-                        )
-                        rbt_f_len = (
-                            len(robot_frontiers) if robot_frontiers is not None else 0
-                        )
-                        srv_sample = (
-                            server_frontiers[:3].tolist()
+                        srv_f_fp = (
+                            int(np.sum(server_frontiers))
                             if server_frontiers is not None
                             and len(server_frontiers) > 0
-                            else []
-                        )
-                        rbt_sample = (
-                            robot_frontiers[:3].tolist()
-                            if robot_frontiers is not None and len(robot_frontiers) > 0
-                            else []
-                        )
-                        srv_map_shape = (
-                            getattr(server, "global_map", None).shape
-                            if getattr(server, "global_map", None) is not None
                             else None
                         )
-                        rbt_map_shape = (
-                            getattr(self, "local_map", None).shape
-                            if getattr(self, "local_map", None) is not None
+                    except Exception:
+                        srv_f_fp = None
+                    try:
+                        rbt_f_fp = (
+                            int(np.sum(robot_frontiers))
+                            if robot_frontiers is not None
+                            and len(robot_frontiers) > 0
                             else None
                         )
-                        # concise fingerprint: sum of coords (stable small-int) to help quick diffing
-                        try:
-                            srv_f_fp = (
-                                int(np.sum(server_frontiers))
-                                if server_frontiers is not None
-                                and len(server_frontiers) > 0
-                                else None
-                            )
-                        except Exception:
-                            srv_f_fp = None
-                        try:
-                            rbt_f_fp = (
-                                int(np.sum(robot_frontiers))
-                                if robot_frontiers is not None
-                                and len(robot_frontiers) > 0
-                                else None
-                            )
-                        except Exception:
-                            rbt_f_fp = None
-                        logger.warning(
-                            f"[R{self.robot_id} Awareness] MISMATCH DIAG: server_cands={len(server_cands)} vs robot_cands=0 | srv_frontiers_len={srv_f_len} srv_sample={srv_sample} srv_fp={srv_f_fp} | rbt_frontiers_len={rbt_f_len} rbt_sample={rbt_sample} rbt_fp={rbt_f_fp} | srv_map_shape={srv_map_shape} rbt_map_shape={rbt_map_shape}"
-                        )
                     except Exception:
-                        logger.exception(
-                            f"[R{self.robot_id} Awareness] Error while logging mismatch diagnostics."
-                        )
-                    try:
-                        # copy server-side candidate info into robot
-                        self.graph_generator.target_candidates = copy.deepcopy(
-                            server.graph_generator.target_candidates
-                        )
-                        self.graph_generator.candidates_utility = copy.deepcopy(
-                            server.graph_generator.candidates_utility
-                        )
-                        self.node_utility = copy.deepcopy(
-                            server.graph_generator.node_utility
-                        )
-                        self.node_coords = copy.deepcopy(
-                            server.graph_generator.node_coords
-                        )
-                        self.local_map_graph = (
-                            copy.deepcopy(server.local_map_graph)
-                            if hasattr(server, "local_map_graph")
-                            else copy.deepcopy(server.graph_generator.graph.edges)
-                        )
-                        logger.debug(
-                            f"[R{self.robot_id} Awareness] Fallback: copied {len(self.graph_generator.target_candidates)} candidates from server."
-                        )
-                    except Exception:
-                        logger.exception(
-                            f"[R{self.robot_id} Awareness] Fallback copy from server failed."
-                        )
-                    # Focused warning if robot's lightweight update produced zero candidates while server has candidates
-                    try:
-                        logger.warning(
-                            f"[R{self.robot_id} Awareness] MISMATCH: robot candidates=0 but server candidates={len(server_cands)}. Fallback applied."
-                        )
-                    except Exception:
-                        pass
-        except Exception:
-            logger.exception(
-                f"[R{self.robot_id} Awareness] Error in fallback candidate sync."
-            )
+                        rbt_f_fp = None
+                    logger.warning(
+                        f"[R{self.robot_id} Awareness] MISMATCH DIAG: server_cands={len(server_cands)} vs robot_cands=0 | srv_frontiers_len={srv_f_len} srv_sample={srv_sample} srv_fp={srv_f_fp} | rbt_frontiers_len={rbt_f_len} rbt_sample={rbt_sample} rbt_fp={rbt_f_fp} | srv_map_shape={srv_map_shape} rbt_map_shape={rbt_map_shape}"
+                    )
+                except Exception:
+                    logger.exception(
+                        f"[R{self.robot_id} Awareness] Error while logging mismatch diagnostics."
+                    )
 
-        # 根據全域參數 GRAPH_UPDATE_INTERVAL 決定何時做 local rebuild。
-        # 原先僅在 local_map_graph 缺失或為空時才重建；應用者要求 robots 端也每步更新一次
-        # （當 GRAPH_UPDATE_INTERVAL == 1 則每步皆會重建）。此處改為每隔 GRAPH_UPDATE_INTERVAL 步嘗試重建。
-        try:
-            if (self.graph_update_counter % self.graph_update_interval) == 0:
-                logger.debug(
-                    f"[R{self.robot_id} Awareness] Scheduled local rebuild (counter={self.graph_update_counter})..."
-                )
                 try:
-                    node_coords, graph_edges, node_utility, guidepost = (
-                        self.graph_generator.rebuild_graph_structure(
-                            self.local_map, new_frontiers, self.frontiers, self.position
-                        )
+                    # copy server-side candidate info into robot
+                    self.graph_generator.target_candidates = copy.deepcopy(
+                        server.graph_generator.target_candidates
                     )
-                    self.node_coords = node_coords
-                    self.local_map_graph = graph_edges
-                    self.node_utility = node_utility
-                    self.guidepost = guidepost
-                except Exception as e:
-                    if self.debug_mode:
-                        raise
-                    logger.error(
-                        f"Robot {self.robot_id} failed rebuild_graph_structure: {e}",
-                        exc_info=True,
+                    self.graph_generator.candidates_utility = copy.deepcopy(
+                        server.graph_generator.candidates_utility
                     )
-        except Exception:
-            # 保守處理：若計數或取模出錯，不做任何事
-            logger.exception(
-                f"[R{self.robot_id} Awareness] Error while checking GRAPH_UPDATE_INTERVAL for local rebuild."
-            )
-
-        self.frontiers = new_frontiers
+                    self.node_utility = copy.deepcopy(
+                        server.graph_generator.node_utility
+                    )
+                    self.node_coords = copy.deepcopy(
+                        server.graph_generator.node_coords
+                    )
+                    self.local_map_graph = (
+                        copy.deepcopy(server.local_map_graph)
+                        if hasattr(server, "local_map_graph")
+                        else copy.deepcopy(server.graph_generator.graph.edges)
+                    )
+                    logger.debug(
+                        f"[R{self.robot_id} Awareness] Fallback: copied {len(self.graph_generator.target_candidates)} candidates from server."
+                    )
+                except Exception:
+                    logger.exception(
+                        f"[R{self.robot_id} Awareness] Fallback copy from server failed."
+                    )
 
     def needs_new_target(self) -> bool:
         """檢查是否需要新目標（路徑為空）。 Returns bool。"""

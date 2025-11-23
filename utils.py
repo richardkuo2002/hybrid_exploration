@@ -1,10 +1,11 @@
 import numpy as np
+from typing import List
 from numba import jit  # <--- 1. 匯入 numba
 
 from parameter import PIXEL_OCCUPIED, PIXEL_UNKNOWN
 
 
-@jit(nopython=True)  # <--- 2. 加上 JIT 裝飾器
+@jit(nopython=True, nogil=True)  # <--- 2. 加上 JIT 裝飾器
 def check_collision(start: np.ndarray, end: np.ndarray, robot_map: np.ndarray) -> bool:
     """檢查從 start 到 end 的線段是否與地圖中的障礙或未知區域發生碰撞 (Bresenham)。
 
@@ -51,3 +52,44 @@ def check_collision(start: np.ndarray, end: np.ndarray, robot_map: np.ndarray) -
             error += dx
 
     return collision
+
+
+@jit(nopython=True, nogil=True)
+def merge_maps_jit(
+    maps: List[np.ndarray],
+    merged_map: np.ndarray,
+    pixel_free: int,
+    pixel_occupied: int,
+    pixel_unknown: int,
+) -> np.ndarray:
+    """Numba-optimized map merging.
+    
+    Logic:
+    - If ANY map has OCCUPIED at (y,x), result is OCCUPIED.
+    - Else if ANY map has FREE at (y,x), result is FREE.
+    - Else result is UNKNOWN.
+    """
+    rows, cols = merged_map.shape
+    n_maps = len(maps)
+    
+    for y in range(rows):
+        for x in range(cols):
+            is_obs = False
+            is_free = False
+            
+            for i in range(n_maps):
+                val = maps[i][y, x]
+                if val == pixel_occupied:
+                    is_obs = True
+                    break # Obstacle dominance
+                elif val == pixel_free:
+                    is_free = True
+            
+            if is_obs:
+                merged_map[y, x] = pixel_occupied
+            elif is_free:
+                merged_map[y, x] = pixel_free
+            else:
+                merged_map[y, x] = pixel_unknown
+                
+    return merged_map

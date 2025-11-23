@@ -25,7 +25,7 @@ from utils import check_collision  # 確保從 utils 匯入的是 JIT 版本
 # 注意：因為 sensor_work 呼叫了 check_collision，
 # 且 check_collision 被 JIT 編譯，
 # 所以 sensor_work 也必須被 JIT 編譯才能高效呼叫。
-@jit(nopython=True)  # <--- 2. 加上 JIT 裝飾器
+@jit(nopython=True, nogil=True)  # <--- 2. 加上 JIT 裝飾器
 def sensor_work(
     robot_position: np.ndarray,
     sensor_range: Union[float, int],
@@ -97,7 +97,7 @@ def sensor_work(
 
 # 這裡我們先創建一個模擬的 JIT 內部輔助函式，它執行類似 check_collision 的邏輯
 # 但直接修改傳入的 local_map_copy
-@jit(nopython=True)
+@jit(nopython=True, nogil=True)
 def _sensor_collision_check_wrapper(
     x0_f: float,
     y0_f: float,

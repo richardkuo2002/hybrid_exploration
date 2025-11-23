@@ -2,10 +2,13 @@ import argparse
 import copy
 import datetime
 import logging
+import multiprocessing
 import os
 import random
 import sys
-from typing import Optional, Tuple
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -51,7 +54,7 @@ class Worker:
             plot=plot,
             force_sync_debug=force_sync_debug,
             graph_update_interval=graph_update_interval,
-            debug_mode=log_level == logging.DEBUG,
+            debug_mode=logger.getEffectiveLevel() == logging.DEBUG,
         )
         self.step_count = 0
         self.plot = plot
@@ -79,32 +82,76 @@ class Worker:
             curr_episode (int): 當前 episode 編號。
 
         Returns:
-            Tuple[bool, int]:
+            Tuple[bool, int, Dict[str, Any]]:
                 success (bool): 是否完成探索 (True=完成)。
                 step (int): 結束時的步數或 timeout 步數。
+                metrics (Dict[str, Any]): 包含 coverage, total_distance, replanning_count, map_merge_count 等。
         """
         # <--- 修改點：恢復 PLOT_INTERVAL ---
         PLOT_INTERVAL = 5
         output_dir = "videos"
 
+        # ThreadPoolExecutor for parallel sensor updates
+        # Use a reasonable number of threads (e.g., min(32, agent_num))
+        max_workers = min(32, self.agent_num)
+        
+        # Metrics tracking
+        total_distance = 0.0
+        replanning_count = 0
+        map_merge_count = 0
+        
+        # Track previous positions for distance calculation
+        prev_positions = [robot.position.copy() if robot.position is not None else np.zeros(2) for robot in self.env.robot_list]
+
         for step in range(MAX_EPS_STEPS):
             msg_cnt = ""
-            # ... (階段一：機器人自主行動) ...
+            
+            # === Phase 1: Parallel Sensor & Graph Update ===
+            # Execute sense_and_update_graph in parallel
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = []
+                for i, robot in enumerate(self.env.robot_list):
+                    futures.append(
+                        executor.submit(
+                            robot.sense_and_update_graph,
+                            self.env.real_map,
+                            self.env.find_frontier,
+                        )
+                    )
+                # Wait for all to complete and handle exceptions
+                for i, future in enumerate(futures):
+                    try:
+                        future.result()
+                    except Exception as e:
+                        logger.error(f"Error in Robot {i} parallel update step {step}: {e}", exc_info=True)
+
+            # === Phase 2: Sequential Interaction & Decision ===
             for i, robot in enumerate(self.env.robot_list):
                 try:
-                    robot.update_local_awareness(
-                        self.env.real_map,
+                    # Interaction & Merge (Sequential)
+                    robot.interact_and_merge(
                         self.env.robot_list,
                         self.env.server,
-                        self.env.find_frontier,
                         self.env.merge_maps,
                     )
+                    map_merge_count += 1 # Count merge operations (per robot per step)
+                    
+                    # Decision & Move (Sequential)
                     if robot.needs_new_target():
                         if not robot.is_in_server_range:
                             robot.decide_next_target(self.env.robot_list)
+                            replanning_count += 1 # Count replanning
                     robot.move_one_step(self.env.robot_list)
+                    
+                    # Calculate distance
+                    if robot.position is not None:
+                        dist = np.linalg.norm(robot.position - prev_positions[i])
+                        total_distance += dist
+                        prev_positions[i] = robot.position.copy()
+
                 except Exception as e:
-                    logger.error(f"Error in Robot {i} step {step}: {e}", exc_info=True)
+                    logger.error(f"Error in Robot {i} sequential step {step}: {e}", exc_info=True)
+                
                 num_targets = 0
                 if (
                     hasattr(robot.graph_generator, "target_candidates")
@@ -175,7 +222,16 @@ class Worker:
                     base_filename = f"{time_str}_map{map_idx}_robots{robot_count}.mp4"
                     filename = os.path.join(output_dir, base_filename)
                     self.env.save_video(filename)
-                return True, step
+                    filename = os.path.join(output_dir, base_filename)
+                    self.env.save_video(filename)
+                
+                metrics = {
+                    "coverage": coverage,
+                    "total_distance": total_distance,
+                    "replanning_count": replanning_count,
+                    "map_merge_count": map_merge_count,
+                }
+                return True, step, metrics
 
             self.step_count = step
 
@@ -192,7 +248,16 @@ class Worker:
             base_filename = f"{time_str}_map{map_idx}_robots{robot_count}.mp4"
             filename = os.path.join(output_dir, base_filename)
             self.env.save_video(filename)
-        return False, step
+            filename = os.path.join(output_dir, base_filename)
+            self.env.save_video(filename)
+        
+        metrics = {
+            "coverage": coverage,
+            "total_distance": total_distance,
+            "replanning_count": replanning_count,
+            "map_merge_count": map_merge_count,
+        }
+        return False, step, metrics
 
 
 if __name__ == "__main__":
@@ -253,8 +318,8 @@ if __name__ == "__main__":
             force_sync_debug=args.force_sync_debug,
             graph_update_interval=args.graph_update_interval,
         )
-        success, steps = worker.run_episode(curr_episode=0)
-        logger.info(f"Episode finished: {success} in {steps} steps.")
+        success, steps, metrics = worker.run_episode(curr_episode=0)
+        logger.info(f"Episode finished: {success} in {steps} steps. Metrics: {metrics}")
     except Exception as e:
         logger.critical(
             f"Simulation failed with unhandled exception: {e}", exc_info=True
