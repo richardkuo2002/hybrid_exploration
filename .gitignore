@@ -22,3 +22,7 @@ videos/
 
 .vscode/
 *.dat
+
+# Private documentation
+docs/dev_notes/
+dev_notes.zip
