@@ -222,7 +222,7 @@ def save_and_viz_results(
         {
             "finished_ep": finished_eps,
             "success": successes,
-            "agent_used": agent_used,
+            "agent_num": agent_used,
             "map_index": map_indices,
             "duration": durations,
             "coverage": coverages,
@@ -240,14 +240,17 @@ def save_and_viz_results(
     df.to_csv(csv_path, index=False)
     print(f"Saved results to {csv_path}")
 
-    # 畫圖 (若有指定路徑)
+    # 輸出 CSV
+    df.to_csv(csv_path, index=False)
+    print(f"Saved results to {csv_path}")
+
+    # 畫進階圖表
     if png_path:
-        plot_boxplots_finished_duration(
-            finished_eps, 
-            durations, 
-            output_png=png_path, 
-            title=f"Batch Results (N={len(finished_eps)})"
-        )
+        # png_path 這裡只當作 base name 的參考，實際檔名會由 plot_grouped_results 決定
+        # 我們從 png_path 提取目錄與檔名 base
+        out_dir = os.path.dirname(png_path)
+        base = os.path.splitext(os.path.basename(png_path))[0]
+        plot_grouped_results(df, out_dir, base)
 
     # 摘要統計 (不再分 parity)
     summary = df.agg(
@@ -268,99 +271,121 @@ def save_and_viz_results(
     return df, summary
 
 
-def plot_boxplots_finished_duration(
-    finished_eps: List[Any],
-    durations: List[float],
-    output_png: str = "finished_duration_boxplots.png",
-    title: str = "Finished EP, Duration, and Duration per EP",
-    skip_zero_finished: bool = True,
-    show_mean: bool = True,
+def plot_grouped_results(
+    df: pd.DataFrame,
+    output_dir: str,
+    filename_base: str,
 ) -> None:
     """
-    畫出三個箱形圖：
-    1) finished_ep
-    2) duration（秒）
-    3) duration_per_ep = duration / finished_ep（若 finished_ep==0 依設定跳過）
-
-    Args:
-        finished_eps (Sequence[Number]): 每次 run 的 finished_ep。
-        durations (Sequence[Number]): 每次 run 的耗時（秒）。
-        output_png (str): 輸出檔名。
-        title (str): 圖標題。
-        skip_zero_finished (bool): 是否忽略 finished_ep==0 的樣本於第三個箱形圖。
-        show_mean (bool): 箱形圖是否顯示平均值。
+    繪製分組視覺化圖表：
+    1. Grouped Boxplots (依 agent_num 分組)
+    2. Trend Lines (依 agent_num 平均值 + 標準差)
     """
-    # 轉為 ndarray 並做長度/數值檢查（若 element 為 list/tuple，取最後一項）
-    fe = np.array(
-        [
-            (
-                fe[-1]
-                if isinstance(fe, (list, tuple, np.ndarray)) and len(fe) > 0
-                else (fe if isinstance(fe, (int, float)) else np.nan)
-            )
-            for fe in finished_eps
-        ],
-        dtype=float,
-    )
-    du = np.asarray(durations, dtype=float)
-
-    if fe.size == 0 or du.size == 0 or fe.size != du.size:
-        print("plot_boxplots_finished_duration: invalid inputs, skip.")
+    # 確保 agent_num 是整數以便排序與繪圖
+    if "agent_num" not in df.columns:
+        print("plot_grouped_results: 'agent_num' column missing, skipping.")
         return
 
-    # 構造第三組資料：duration per ep
-    if skip_zero_finished:
-        mask = (fe > 0) & np.isfinite(du) & np.isfinite(fe)
-        du_per_ep = du[mask] / fe[mask] if mask.any() else np.array([])
-    else:
-        # 對 0 做安全處理：以 NaN 代表不可除
-        with np.errstate(divide="ignore", invalid="ignore"):
-            du_per_ep = du / fe
-            du_per_ep = du_per_ep[np.isfinite(du_per_ep)]
+    # 準備要畫的指標
+    metrics = [
+        ("finished_ep", "Finished Steps"),
+        ("duration", "Duration (s)"),
+        ("coverage", "Coverage"),
+        ("total_distance", "Total Distance"),
+        ("replanning_count", "Replanning Count"),
+        ("map_merge_count", "Map Merge Count"),
+    ]
 
-    # 準備要畫的資料與標籤
-    data_list = [fe, du, du_per_ep]
-    labels = ["finished_ep", "duration(s)", "duration/ep(s)"]
+    # 1. Grouped Boxplots
+    # 針對每個指標畫一張圖，X軸為 agent_num
+    for col, title in metrics:
+        if col not in df.columns:
+            continue
+            
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        # 準備數據：list of arrays
+        agent_nums = sorted(df["agent_num"].unique())
+        data = []
+        labels = []
+        
+        for n in agent_nums:
+            subset = df[df["agent_num"] == n][col].dropna()
+            if len(subset) > 0:
+                data.append(subset.values)
+                labels.append(str(n))
+        
+        if not data:
+            plt.close(fig)
+            continue
+            
+        bp = ax.boxplot(
+            data, tick_labels=labels, patch_artist=True, showmeans=True, meanline=True
+        )
+        
+        # 美化
+        colors = ["#73a9ff", "#9fdc6c", "#f7a072", "#e6c229", "#d11149"]
+        for i, box in enumerate(bp["boxes"]):
+            box.set(facecolor=colors[i % len(colors)], alpha=0.6)
+            
+        ax.set_title(f"{title} by Agent Num")
+        ax.set_xlabel("Number of Agents")
+        ax.set_ylabel(title)
+        ax.grid(axis="y", linestyle="--", alpha=0.4)
+        
+        out_path = os.path.join(output_dir, f"{filename_base}_boxplot_{col}.png")
+        fig.savefig(out_path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        print(f"Saved boxplot: {out_path}")
 
-    # 過濾空資料組，避免空箱形圖報錯
-    valid_data = []
-    valid_labels = []
-    for d, lab in zip(data_list, labels):
-        if isinstance(d, np.ndarray) and d.size > 0 and np.isfinite(d).any():
-            valid_data.append(d)
-            valid_labels.append(lab)
-
-    if len(valid_data) == 0:
-        print("plot_boxplots_finished_duration: no valid data to plot, skip.")
+    # 2. Trend Lines (Summary Plot)
+    # 將所有指標的趨勢畫在同一張大圖 (Subplots)
+    # 計算平均與標準差
+    summary = df.groupby("agent_num").agg(["mean", "std"])
+    
+    valid_metrics = [m for m in metrics if m[0] in df.columns]
+    n_metrics = len(valid_metrics)
+    if n_metrics == 0:
         return
 
-    fig, ax = plt.subplots(figsize=(8, 5))
-
-    bp = ax.boxplot(
-        valid_data, vert=True, patch_artist=True, showmeans=show_mean, meanline=True
-    )
-
-    # 美化外觀
-    colors = ["#73a9ff", "#9fdc6c", "#f7a072"]
-    for i, box in enumerate(bp["boxes"]):
-        box.set(facecolor=colors[i % len(colors)], alpha=0.6, edgecolor="#444")
-    for median in bp["medians"]:
-        median.set(color="#d62728", linewidth=2.0)
-    if show_mean and "means" in bp:
-        for mean in bp["means"]:
-            mean.set(color="#2ca02c", linewidth=2.0)
-
-    ax.set_title(title)
-    ax.set_ylabel("value")
-    ax.set_xticks(range(1, len(valid_labels) + 1))
-    ax.set_xticklabels(valid_labels, rotation=0)
-
-    # 輔助線與版面
-    ax.grid(axis="y", linestyle="--", alpha=0.4)
+    cols = 2
+    rows = (n_metrics + 1) // cols
+    fig, axes = plt.subplots(rows, cols, figsize=(12, 4 * rows))
+    axes = axes.flatten()
+    
+    agent_nums = summary.index.values
+    
+    for i, (col, title) in enumerate(valid_metrics):
+        ax = axes[i]
+        mean_val = summary[col]["mean"]
+        std_val = summary[col]["std"].fillna(0)
+        
+        ax.errorbar(
+            agent_nums, 
+            mean_val, 
+            yerr=std_val, 
+            fmt='-o', 
+            capsize=5, 
+            linewidth=2, 
+            markersize=6,
+            label="Mean ± Std"
+        )
+        
+        ax.set_title(f"{title} Trend")
+        ax.set_xlabel("Number of Agents")
+        ax.set_ylabel(title)
+        ax.grid(True, linestyle="--", alpha=0.4)
+        ax.set_xticks(agent_nums)
+        
+    # Hide unused subplots
+    for j in range(i + 1, len(axes)):
+        axes[j].axis('off')
+        
     fig.tight_layout()
-    fig.savefig(output_png, dpi=150, bbox_inches="tight")
+    out_path = os.path.join(output_dir, f"{filename_base}_trends.png")
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print(f"Boxplot saved to {output_png}")
+    print(f"Saved trend plot: {out_path}")
 
 
 def save_results_csv(
