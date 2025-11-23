@@ -25,6 +25,7 @@ class Server:
         plot: bool = False,
         force_sync_debug: bool = False,
         graph_update_interval: Optional[int] = None,
+        debug_mode: bool = False,
     ) -> None:
         """初始化 Server，管理全域地圖與任務分派狀態。
 
@@ -36,10 +37,12 @@ class Server:
             plot (bool): 是否啟用繪圖相關功能。
             force_sync_debug (bool): 是否強制同步除錯。
             graph_update_interval (Optional[int]): Graph 更新間隔。
+            debug_mode (bool): 是否啟用除錯模式 (crash on error)。
 
         Returns:
             None
         """
+        self.debug_mode = debug_mode
         self.position = start_position
         from parameter import PIXEL_UNKNOWN
 
@@ -148,6 +151,8 @@ class Server:
                 self.node_utility = node_utility
                 self.guidepost = guidepost
             except Exception as e:
+                if self.debug_mode:
+                    raise
                 logger.error(
                     f"[Server Step] Failed rebuild_graph_structure: {e}", exc_info=True
                 )
@@ -182,6 +187,8 @@ class Server:
                 self.node_utility = node_utility
                 self.guidepost = guidepost
             except Exception as e:
+                if self.debug_mode:
+                    raise
                 logger.error(
                     f"[Server Step] Failed update_node_utilities: {e}", exc_info=True
                 )
@@ -269,7 +276,7 @@ class Server:
         total_free = np.sum(real_map == PIXEL_FREE)
         explored = np.sum(self.global_map == PIXEL_FREE)
         coverage = explored / total_free if total_free > 0 else 0.0
-        done = (total_frontiers == 0) or (coverage >= 0.95)
+        done = (total_frontiers == 0) or (coverage >= COVERAGE_THRESHOLD)
         if not robots_need_assignment:
             logger.debug("[Server Step] No robots need assignment.")
             return done, coverage
@@ -363,6 +370,8 @@ class Server:
         try:
             row_indices, col_indices = linear_sum_assignment(cost_matrix)
         except Exception as e:
+            if self.debug_mode:
+                raise
             logger.error(f"[Server Step] Hungarian failed: {e}", exc_info=True)
             return done, coverage
 
@@ -432,6 +441,8 @@ class Server:
                         )
                         assigned_count += 1
                 except Exception as e:
+                    if self.debug_mode:
+                        raise
                     logger.error(
                         f"[Server Step] Path plan EXCEPTION for R{robot_idx}: {e}",
                         exc_info=True,
@@ -477,10 +488,10 @@ class Server:
             planned_path = getattr(robot, "planned_path", [])
             if target_pos is not None:
                 distances = np.linalg.norm(candidates - target_pos, axis=1)
-                available_mask &= distances > 20
+                available_mask &= distances > TARGET_SEPARATION_DIST
             if robot_pos is not None:
                 distances_to_robot = np.linalg.norm(candidates - robot_pos, axis=1)
-                available_mask &= distances_to_robot > 15
+                available_mask &= distances_to_robot > ROBOT_SEPARATION_DIST
             if planned_path and len(planned_path) > 0:
                 for idx, planned_pos in enumerate(planned_path[:3]):
                     if planned_pos is not None:
@@ -489,7 +500,7 @@ class Server:
                             distances_to_planned = np.linalg.norm(
                                 candidates - planned_pos, axis=1
                             )
-                            available_mask &= distances_to_planned > 10
+                            available_mask &= distances_to_planned > PLANNED_PATH_SEPARATION_DIST
         final_count = np.sum(available_mask)
         logger.debug(
             f"[Server Filter] Filtered targets: {initial_count} -> {final_count}"

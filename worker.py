@@ -51,6 +51,7 @@ class Worker:
             plot=plot,
             force_sync_debug=force_sync_debug,
             graph_update_interval=graph_update_interval,
+            debug_mode=log_level == logging.DEBUG,
         )
         self.step_count = 0
         self.plot = plot

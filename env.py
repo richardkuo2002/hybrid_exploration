@@ -31,6 +31,7 @@ class Env:
         plot: bool = True,
         force_sync_debug: bool = False,
         graph_update_interval: Optional[int] = None,
+        debug_mode: bool = False,
     ) -> None:
         """初始化環境 (讀取地圖、建立伺服器與機器人)。
 
@@ -41,6 +42,7 @@ class Env:
             plot (bool): 是否啟用繪圖。
             force_sync_debug (bool): 是否強制同步除錯。
             graph_update_interval (Optional[int]): Graph 更新間隔。
+            debug_mode (bool): 是否啟用除錯模式。
 
         Returns:
             None
@@ -82,6 +84,7 @@ class Env:
             plot,
             force_sync_debug=self.force_sync_debug,
             graph_update_interval=graph_update_interval,
+            debug_mode=debug_mode,
         )
         self.n_agent = n_agent
         self.robot_list: List[Robot] = []
@@ -150,6 +153,7 @@ class Env:
                 k_size,
                 plot=plot,
                 graph_update_interval=graph_update_interval,
+                debug_mode=debug_mode,
             )
             robot.robot_id = i
             try:

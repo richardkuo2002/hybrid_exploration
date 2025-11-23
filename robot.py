@@ -24,6 +24,7 @@ class Robot:
         k_size: int,
         plot: bool = False,
         graph_update_interval: Optional[int] = None,
+        debug_mode: bool = False,
     ) -> None:
         """初始化 Robot。
 
@@ -34,10 +35,12 @@ class Robot:
             k_size (int): Graph generator 的 k。
             plot (bool): 是否啟用繪圖。
             graph_update_interval (Optional[int]): Graph 更新間隔。
+            debug_mode (bool): 是否啟用除錯模式。
 
         Returns:
             None
         """
+        self.debug_mode = debug_mode
         self.position = start_position
         from parameter import PIXEL_UNKNOWN
 
@@ -328,6 +331,8 @@ class Robot:
                 except Exception:
                     pass
         except Exception as e:
+            if self.debug_mode:
+                raise
             logger.error(
                 f"Robot {self.robot_id} failed update_node_utilities: {e}",
                 exc_info=True,
@@ -474,6 +479,8 @@ class Robot:
                     self.node_utility = node_utility
                     self.guidepost = guidepost
                 except Exception as e:
+                    if self.debug_mode:
+                        raise
                     logger.error(
                         f"Robot {self.robot_id} failed rebuild_graph_structure: {e}",
                         exc_info=True,
@@ -499,8 +506,7 @@ class Robot:
         Returns:
             None
         """
-        MAX_RETURN_REPLAN_ATTEMPTS = 2
-        RETURN_FAIL_COOLDOWN_STEPS = 10
+        # MAX_RETURN_REPLAN_ATTEMPTS and RETURN_FAIL_COOLDOWN_STEPS are imported from parameter
         logger.debug(
             f"[R{self.robot_id} Decide] Pos:{self.position}, InRange:{self.is_in_server_range}, OutSteps:{self.out_range_step}, Return:{self.is_returning}, Cooldown:{self.return_fail_cooldown}"
         )
@@ -645,7 +651,7 @@ class Robot:
                 continue
             if other_robot.position is not None:
                 dist_to_other = np.linalg.norm(next_step - other_robot.position)
-                if dist_to_other < 1.5:
+                if dist_to_other < COLLISION_DIST:
                     is_blocked = True
                     blocker_id = other_robot.robot_id
                     break
@@ -654,7 +660,7 @@ class Robot:
                 f"[R{self.robot_id} Move] Blocked by R{blocker_id} @ {all_robots[blocker_id].position}. Next:{next_step}. Stay:{self.stay_count}"
             )
             self.stay_count += 1
-            MAX_STAY_COUNT = 5
+            # MAX_STAY_COUNT is imported from parameter
             if self.stay_count > MAX_STAY_COUNT:
                 logger.debug(f"[R{self.robot_id} Move] Waited too long, try back step.")
                 if len(self.movement_history) > 1:
@@ -663,7 +669,7 @@ class Robot:
                     for r in all_robots:
                         if (
                             r is not self
-                            and np.linalg.norm(previous_pos - r.position) < 1.5
+                            and np.linalg.norm(previous_pos - r.position) < COLLISION_DIST
                         ):
                             can_move_back = False
                             break
@@ -810,7 +816,7 @@ class Robot:
                 dist_to_other_target = np.linalg.norm(
                     candidates - robot.target_pos, axis=1
                 )
-                too_close_to_target = dist_to_other_target < 20
+                too_close_to_target = dist_to_other_target < TARGET_SEPARATION_DIST
                 valid_mask &= ~too_close_to_target
         num_valid_after_filter = np.sum(valid_mask)
         if not np.any(valid_mask):
