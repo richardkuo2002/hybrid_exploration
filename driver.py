@@ -94,6 +94,7 @@ def run_batch(
     seed: Optional[int] = None,
     graph_update_interval: Optional[int] = None,
     jobs: Optional[int] = None,
+    same_maps: bool = False,
     output_dir: str = "results",
 ) -> Tuple[List[Any], List[bool], List[int], List[int], List[float]]:
     """
@@ -105,10 +106,25 @@ def run_batch(
 
     # 準備實驗參數列表
     tasks = []
-    for i in range(n_runs):
-        agent_num = random.randint(agent_min, agent_max)
-        map_index = random.randint(0, map_max_index)
-        tasks.append((i, agent_num, map_index, graph_update_interval))
+    if same_maps:
+        # same_maps 模式：n_runs 代表地圖數量
+        # 對每張地圖，跑遍所有 agent 數量 (agent_min ~ agent_max)
+        print(f"Mode: Same Maps. Generating {n_runs} maps, each tested with agents {agent_min} to {agent_max}.")
+        run_idx = 0
+        for map_i in range(n_runs):
+            # 隨機選一張圖 (或是循序，這裡維持隨機但固定種子)
+            map_index = random.randint(0, map_max_index)
+            for agent_num in range(agent_min, agent_max + 1):
+                tasks.append((run_idx, agent_num, map_index, graph_update_interval))
+                run_idx += 1
+        # 更新總 runs 數以便顯示進度
+        n_runs = len(tasks)
+    else:
+        # 原始模式：每次 run 隨機選 agent_num 和 map
+        for i in range(n_runs):
+            agent_num = random.randint(agent_min, agent_max)
+            map_index = random.randint(0, map_max_index)
+            tasks.append((i, agent_num, map_index, graph_update_interval))
 
     finished_eps: List[Any] = []
     successes: List[bool] = []
@@ -176,9 +192,12 @@ def run_batch(
     g_str = f"_g{graph_update_interval}" if graph_update_interval is not None else ""
     filename_base = f"results_runs{n_runs}_agents{agent_min}-{agent_max}{g_str}_{timestamp}"
     
-    os.makedirs(output_dir, exist_ok=True)
-    csv_path = os.path.join(output_dir, f"{filename_base}.csv")
-    png_path = os.path.join(output_dir, f"{filename_base}.png")
+    # Create a dedicated subdirectory for this run
+    run_output_dir = os.path.join(output_dir, filename_base)
+    os.makedirs(run_output_dir, exist_ok=True)
+    
+    csv_path = os.path.join(run_output_dir, f"{filename_base}.csv")
+    png_path = os.path.join(run_output_dir, f"{filename_base}.png")
 
     save_and_viz_results(
         finished_eps,
@@ -444,6 +463,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output-dir", type=str, default="results", help="Directory to save results"
     )
+    parser.add_argument(
+        "--same-maps",
+        action="store_true",
+        help="If set, n-runs becomes number of maps, and each map is tested with all agent counts (min to max).",
+    )
     args = parser.parse_args()
 
     N_RUNS = args.n_runs
@@ -463,6 +487,7 @@ if __name__ == "__main__":
         seed=args.seed if hasattr(args, "seed") else SEED,
         graph_update_interval=args.graph_update_interval,
         jobs=args.jobs,
+        same_maps=args.same_maps,
         output_dir=args.output_dir,
     )
 
