@@ -851,8 +851,9 @@ class Env:
         from PIL import Image
 
         # 取得目前畫布為 PIL Image
+        # 取得目前畫布為 PIL Image
         buf = io.BytesIO()
-        plt.savefig(buf, format="png", dpi=100, bbox_inches="tight")
+        plt.savefig(buf, format="png", dpi=100)
         buf.seek(0)
         try:
             image = Image.open(buf).convert("RGB")
