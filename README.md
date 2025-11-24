@@ -154,11 +154,11 @@ python driver.py --n-runs 100 --jobs 6 --agent-min 3 --agent-max 3
 使用 `unittest` 模組執行所有測試：
 
 ```bash
-conda run -n hybrid python -m unittest discover tests
+python -m unittest discover tests
 ```
 
 或執行特定測試檔案：
 
 ```bash
-conda run -n hybrid python tests/test_graph.py
+python tests/test_graph.py
 ```

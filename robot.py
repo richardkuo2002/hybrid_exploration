@@ -113,17 +113,20 @@ class Robot:
         # 新增 handoff 冷卻計數器
         # self.handoff_cooldown = 0 # Moved up
         # self.debug removed
+        self.waited_for_server = False
 
     def sense_and_update_graph(
         self,
         real_map: np.ndarray,
         find_frontier_func: Any,
+        all_robots: List["Robot"] = None,
     ) -> None:
         """執行感測與圖更新（可平行化，無交互）。
 
         Args:
             real_map (np.ndarray): 真實地圖。
             find_frontier_func (callable): 尋找 frontier 的函式。
+            all_robots (List[Robot]): 所有機器人清單 (用於可視性過濾)。
         """
         # --- 在每步一開始遞減 handoff_cooldown ---
         if self.handoff_cooldown > 0:
@@ -139,17 +142,36 @@ class Robot:
         frontiers = find_frontier_func(self.local_map)
         self.frontiers = frontiers
 
+        # 篩選已知機器人 (Known Robots)
+        # 定義：自己 + 通訊範圍內的機器人 + (若自己在 Server 範圍內) 所有也在 Server 範圍內的機器人
+        known_robot_positions = [self.position]
+        if all_robots:
+            for other in all_robots:
+                if other is self:
+                    continue
+                if other.position is None:
+                    continue
+                
+                is_known = False
+                dist = np.linalg.norm(self.position - other.position)
+                
+                # Condition 1: Direct communication
+                if dist < ROBOT_COMM_RANGE:
+                    is_known = True
+                # Condition 2: Both in server range (Server relays info)
+                elif self.is_in_server_range and other.is_in_server_range:
+                    is_known = True
+                
+                if is_known:
+                    known_robot_positions.append(other.position)
+
         # 更新 Graph (增量更新)
-        # 注意：這裡不傳入 all_robot_positions，因為平行化時可能會有競爭
-        # 如果需要考慮其他機器人位置對圖的影響，建議在 interaction 階段處理，或使用唯讀副本
-        # 暫時傳入 None，或僅傳入自己 (self.position)
-        # 為了安全，這裡先只傳入自己，避免讀取其他機器人位置造成 Race Condition
         self.graph_generator.rebuild_graph_structure(
             self.local_map,
             self.frontiers,
             self.old_frontiers,
             self.position,
-            all_robot_positions=[self.position],  # 簡化：只考慮自己，避免競爭
+            all_robot_positions=known_robot_positions,
         )
         self.old_frontiers = self.frontiers
 
@@ -469,6 +491,23 @@ class Robot:
         logger.debug(
             f"[R{self.robot_id} Decide] Pos:{self.position}, InRange:{self.is_in_server_range}, OutSteps:{self.out_range_step}, Return:{self.is_returning}, Cooldown:{self.return_fail_cooldown}"
         )
+        
+        # --- Server Coordination Wait Logic ---
+        # If in server range, give the server a chance to assign a global target via Hungarian algorithm.
+        # We wait 1 step. If server fails to assign (e.g. no candidates), we fall back to local next step.
+        if self.is_in_server_range and not self.target_gived_by_server:
+            if not self.waited_for_server:
+                logger.debug(f"[R{self.robot_id} Decide] In server range. Waiting 1 step for server assignment.")
+                self.waited_for_server = True
+                return
+            else:
+                logger.debug(f"[R{self.robot_id} Decide] Server assigned nothing last step. Falling back to local.")
+                self.waited_for_server = False
+        else:
+            # Reset wait flag if we are out of range or have a server target (though if we have a target, we shouldn't be here)
+            self.waited_for_server = False
+        # --------------------------------------
+
         if self.is_returning:
             if len(self.planned_path) < 1:
                 if self.return_replan_attempts < MAX_RETURN_REPLAN_ATTEMPTS:
@@ -768,10 +807,27 @@ class Robot:
         dists = np.linalg.norm(candidates - self.position, axis=1)
         valid_mask = utilities > 0
         for robot in all_robots:
-            if robot.position is not None:
-                same_pos = np.all(candidates == robot.position, axis=1)
-                valid_mask &= ~same_pos
-            if robot.target_pos is not None and not robot.is_in_server_range:
+            if robot is self:
+                continue
+            if robot.position is None:
+                continue
+            
+            # --- Visibility Check ---
+            is_known = False
+            dist_to_robot = np.linalg.norm(self.position - robot.position)
+            if dist_to_robot < ROBOT_COMM_RANGE:
+                is_known = True
+            elif self.is_in_server_range and robot.is_in_server_range:
+                is_known = True
+            
+            if not is_known:
+                continue
+            # ------------------------
+
+            same_pos = np.all(candidates == robot.position, axis=1)
+            valid_mask &= ~same_pos
+            # Avoid targets of known robots (regardless of whether they are in server range or not)
+            if robot.target_pos is not None:
                 dist_to_other_target = np.linalg.norm(
                     candidates - robot.target_pos, axis=1
                 )

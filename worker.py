@@ -113,9 +113,10 @@ class Worker:
                 for i, robot in enumerate(self.env.robot_list):
                     futures.append(
                         executor.submit(
-                            robot.sense_and_update_graph,
+                        robot.sense_and_update_graph,
                             self.env.real_map,
                             self.env.find_frontier,
+                            self.env.robot_list,
                         )
                     )
                 # Wait for all to complete and handle exceptions
