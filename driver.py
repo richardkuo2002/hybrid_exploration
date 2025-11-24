@@ -287,6 +287,42 @@ def save_and_viz_results(
     print(summary)
     print("==========================\n")
 
+    # --- Detailed Statistics by Agent Count ---
+    print("\n=== Detailed Statistics by Agent Count ===")
+    detailed_metrics = [
+        "finished_ep",
+        "duration",
+        "duration_per_ep",
+        "coverage",
+        "total_distance",
+        "replanning_count",
+    ]
+    
+    # Filter only existing columns
+    detailed_metrics = [m for m in detailed_metrics if m in df.columns]
+    
+    if "agent_num" in df.columns:
+        # Group by agent_num and calculate describe() which includes count, mean, std, min, 25%, 50%, 75%, max
+        grouped_stats = df.groupby("agent_num")[detailed_metrics].describe()
+        
+        # Select specific stats we care about: mean, 25%, 50%, 75%
+        # The column index of describe() is MultiIndex (metric, stat)
+        # We want to reorganize it for better readability or just print it
+        
+        # Print full describe table
+        pd.set_option('display.max_columns', None)
+        pd.set_option('display.width', 1000)
+        print(grouped_stats)
+        
+        # Also save to CSV
+        if csv_path:
+            stats_csv_path = csv_path.replace(".csv", "_stats.csv")
+            grouped_stats.to_csv(stats_csv_path)
+            print(f"\nSaved detailed statistics to {stats_csv_path}")
+    else:
+        print("Column 'agent_num' not found, skipping grouped statistics.")
+    print("==========================================\n")
+
     return df, summary
 
 

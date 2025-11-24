@@ -173,6 +173,21 @@ class Worker:
                     positions_debug.append(f"R{i}:ERR")
             logger.debug("[Debug] Robot Positions: %s", ", ".join(positions_debug))
 
+            # === Update Server State & Merge Maps ===
+            # Update robot positions and range status on server
+            self.env.server.all_robot_position = [r.position for r in self.env.robot_list]
+            self.env.server.robot_in_range = [r.is_in_server_range for r in self.env.robot_list]
+
+            # Merge local maps from robots in range into global map
+            maps_to_merge = [self.env.server.global_map]
+            for r in self.env.robot_list:
+                if r.is_in_server_range:
+                    maps_to_merge.append(r.local_map)
+            
+            if len(maps_to_merge) > 1:
+                merged_global = self.env.merge_maps(maps_to_merge)
+                self.env.server.global_map[:] = merged_global
+
             # ... (階段二：伺服器集中調度) ...
             try:
                 done, coverage = self.env.server.update_and_assign_tasks(

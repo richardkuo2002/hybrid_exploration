@@ -1,4 +1,5 @@
 import copy
+import random
 import logging
 import sys
 from collections import deque
@@ -683,7 +684,51 @@ class Robot:
                         ):
                             self.movement_history.append(self.position.copy())
                     else:
-                        logger.debug(f"[R{self.robot_id} Move] Cannot move back.")
+                        logger.debug(f"[R{self.robot_id} Move] Cannot move back. Attempting random escape.")
+                        # Escape logic: try to move to any valid neighbor
+                        current_tuple = tuple(self.position)
+                        if (
+                            self.local_map_graph
+                            and current_tuple in self.local_map_graph
+                        ):
+                            neighbors = list(self.local_map_graph[current_tuple].keys())
+                            random.shuffle(neighbors)
+                            escaped = False
+                            for nb in neighbors:
+                                nb_arr = np.array(nb)
+                                # Check collision for neighbor
+                                nb_blocked = False
+                                for r in all_robots:
+                                    if r is not self and r.position is not None:
+                                        if (
+                                            np.linalg.norm(nb_arr - r.position)
+                                            < COLLISION_DIST
+                                        ):
+                                            nb_blocked = True
+                                            break
+                                if not nb_blocked:
+                                    self.position = nb_arr
+                                    self.planned_path = []
+                                    self.stay_count = 0
+                                    logger.debug(
+                                        f"[R{self.robot_id} Move] Escaped to {self.position}."
+                                    )
+                                    if not self.movement_history or not np.array_equal(
+                                        self.position, self.movement_history[-1]
+                                    ):
+                                        self.movement_history.append(
+                                            self.position.copy()
+                                        )
+                                    escaped = True
+                                    break
+                            if not escaped:
+                                logger.debug(
+                                    f"[R{self.robot_id} Move] Escape failed. No valid neighbors."
+                                )
+                        else:
+                            logger.debug(
+                                f"[R{self.robot_id} Move] Escape failed. Current pos not in graph."
+                            )
             elif (
                 self.stay_count > 2
                 and self.robot_id > blocker_id
