@@ -173,13 +173,17 @@ class Robot:
                     known_robot_positions.append(other.position)
 
         # 更新 Graph (增量更新)
-        self.graph_generator.rebuild_graph_structure(
+        node_coords, graph_edges, node_utility, guidepost = self.graph_generator.rebuild_graph_structure(
             self.local_map,
             self.frontiers,
             self.old_frontiers,
             self.position,
             all_robot_positions=known_robot_positions,
         )
+        self.node_coords = node_coords
+        self.local_map_graph = graph_edges
+        self.node_utility = node_utility
+        self.guidepost = guidepost
         self.old_frontiers = self.frontiers
 
     def update_local_awareness(
@@ -249,14 +253,14 @@ class Robot:
                 other_is_returning = other_robot.is_returning
 
                 # 當自己正在回去時，無論對方是否有 server 任務，都改成讓對方回去，自己接手對方原本要做的事
-                # 修正：改用 out_range_step 判斷，時間較短（較晚離開 Server）的負責回去
-                my_out_step = self.out_range_step
-                other_out_step = getattr(other_robot, "out_range_step", float("inf"))
+                # 修正：改用距離判斷，距離 Server 較近的負責回去 (Bucket Brigade)
+                dist_self_server = np.linalg.norm(self.position - server.position)
+                dist_other_server = np.linalg.norm(other_robot.position - server.position)
                 
                 # Ensure other robot has a valid target to swap
-                if i_am_returning and not other_is_returning and other_out_step < my_out_step and other_robot.target_pos is not None:
+                if i_am_returning and not other_is_returning and dist_other_server < dist_self_server and other_robot.target_pos is not None:
                     logger.info(
-                        f"[R{self.robot_id} Handoff] I am returning; swap roles with R{other_robot.robot_id} (Fresher). R{other_robot.robot_id} will return; I will take its task."
+                        f"[R{self.robot_id} Handoff] I am returning; swap roles with R{other_robot.robot_id} (Closer to server). R{other_robot.robot_id} will return; I will take its task."
                     )
                     # self 接手 other 的原始任務（深拷貝以避免共享參考）
                     try:
@@ -294,9 +298,9 @@ class Robot:
                     self.handoff_cooldown = HANDOFF_COOLDOWN
                     other_robot.handoff_cooldown = HANDOFF_COOLDOWN
 
-                elif i_have_server_task and other_is_returning and my_out_step < other_out_step:
+                elif i_have_server_task and other_is_returning and dist_self_server < dist_other_server:
                     logger.info(
-                        f"[R{self.robot_id} Handoff] I am departing, giving task to R{other_robot.robot_id}. I am now returning (Fresher)."
+                        f"[R{self.robot_id} Handoff] I am departing, giving task to R{other_robot.robot_id}. I am now returning (Closer to server)."
                     )
                     # 深拷貝原始任務，避免後續修改造成共享
                     my_original_target = copy.deepcopy(self.target_pos)
