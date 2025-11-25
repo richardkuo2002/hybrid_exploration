@@ -140,7 +140,13 @@ class Robot:
 
         # --- 2. 更新 Frontier 與 Graph ---
         # 尋找 frontier
-        frontiers = find_frontier_func(self.local_map)
+        # 修正：先進行 downsample 再傳給 find_frontier_func，因為該函式會將座標乘上 resolution
+        self.downsampled_map = block_reduce(
+            self.local_map.copy(),
+            block_size=(self.resolution, self.resolution),
+            func=np.min,
+        )
+        frontiers = find_frontier_func(self.downsampled_map)
         self.frontiers = frontiers
 
         # 篩選已知機器人 (Known Robots)
