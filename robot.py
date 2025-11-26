@@ -110,6 +110,7 @@ class Robot:
         self.robot_id = -1
         self.is_returning = False
         self.return_replan_attempts = 0
+        self.collision_replan_count = 0 # Track replans due to collision/blocking
         self.return_fail_cooldown = 0
         # 新增 handoff 冷卻計數器
         # self.handoff_cooldown = 0 # Moved up
@@ -753,6 +754,8 @@ class Robot:
                     f"[R{self.robot_id} Move] Yielding to R{blocker_id} & replanning."
                 )
                 new_path = self._plan_local_path(self.target_pos, avoid_pos=next_step)
+                if new_path:
+                    self.collision_replan_count += 1
                 if new_path and not (
                     len(new_path) == 1 and np.array_equal(new_path[0], self.position)
                 ):

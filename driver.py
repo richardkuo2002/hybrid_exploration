@@ -181,7 +181,8 @@ def run_batch(
         durations.append(res["duration"])
         coverages.append(res["coverage"])
         total_distances.append(res["total_distance"])
-        replanning_counts.append(res["replanning_count"])
+        target_selection_counts.append(res["target_selection_count"]) # Changed from replanning_counts
+        collision_replan_counts.append(res["collision_replan_count"]) # Added
         map_merge_counts.append(res["map_merge_count"])
 
     total_time = time.perf_counter() - t0
@@ -207,7 +208,8 @@ def run_batch(
         durations,
         coverages,
         total_distances,
-        replanning_counts,
+        target_selection_counts, # Changed from replanning_counts
+        collision_replan_counts, # Added
         map_merge_counts,
         csv_path=csv_path,
         png_path=png_path,
@@ -224,7 +226,8 @@ def save_and_viz_results(
     durations: List[float],
     coverages: List[float],
     total_distances: List[float],
-    replanning_counts: List[int],
+    target_selection_counts: List[int],
+    collision_replan_counts: List[int],
     map_merge_counts: List[int],
     csv_path: str = "results.csv",
     png_path: Optional[str] = None,
@@ -246,7 +249,8 @@ def save_and_viz_results(
             "duration": durations,
             "coverage": coverages,
             "total_distance": total_distances,
-            "replanning_count": replanning_counts,
+            "target_selection_count": target_selection_counts,
+            "collision_replan_count": collision_replan_counts,
             "map_merge_count": map_merge_counts,
         }
     )
@@ -279,7 +283,8 @@ def save_and_viz_results(
             "duration_per_ep": ["median", "mean"],
             "coverage": ["mean", "std"],
             "total_distance": ["mean", "std"],
-            "replanning_count": ["mean", "std"],
+            "target_selection_count": ["mean", "std"],
+            "collision_replan_count": ["mean", "std"],
         }
     )
 
@@ -295,7 +300,8 @@ def save_and_viz_results(
         "duration_per_ep",
         "coverage",
         "total_distance",
-        "replanning_count",
+        "target_selection_count",
+        "collision_replan_count",
     ]
     
     # Filter only existing columns

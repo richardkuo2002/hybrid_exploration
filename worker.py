@@ -97,7 +97,8 @@ class Worker:
         
         # Metrics tracking
         total_distance = 0.0
-        replanning_count = 0
+        target_selection_count = 0 # Renamed from replanning_count
+        collision_replan_count = 0 # New metric
         map_merge_count = 0
         
         # Track previous positions for distance calculation
@@ -141,7 +142,7 @@ class Worker:
                     if robot.needs_new_target():
                         if not robot.is_in_server_range:
                             robot.decide_next_target(self.env.robot_list)
-                            replanning_count += 1 # Count replanning
+                            target_selection_count += 1 # Count target selections
                     robot.move_one_step(self.env.robot_list)
                     
                     # Calculate distance
@@ -270,7 +271,10 @@ class Worker:
         metrics = {
             "coverage": coverage,
             "total_distance": total_distance,
-            "replanning_count": replanning_count,
+            "coverage": coverage,
+            "total_distance": total_distance,
+            "target_selection_count": target_selection_count,
+            "collision_replan_count": sum(r.collision_replan_count for r in self.env.robot_list),
             "map_merge_count": map_merge_count,
         }
         return False, step, metrics
