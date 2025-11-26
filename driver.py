@@ -81,7 +81,8 @@ def run_single_experiment(
         "duration": dur,
         "coverage": metrics.get("coverage", 0.0),
         "total_distance": metrics.get("total_distance", 0.0),
-        "replanning_count": metrics.get("replanning_count", 0),
+        "target_selection_count": metrics.get("target_selection_count", 0),
+        "collision_replan_count": metrics.get("collision_replan_count", 0),
         "map_merge_count": metrics.get("map_merge_count", 0),
     }
 
@@ -133,7 +134,8 @@ def run_batch(
     durations: List[float] = []
     coverages: List[float] = []
     total_distances: List[float] = []
-    replanning_counts: List[int] = []
+    target_selection_counts: List[int] = []
+    collision_replan_counts: List[int] = []
     map_merge_counts: List[int] = []
 
     # 偵測 CPU 核心數，默認為 cpu_count - 1，但可透過 jobs 參數覆蓋
