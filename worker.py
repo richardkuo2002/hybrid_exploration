@@ -245,7 +245,8 @@ class Worker:
                 metrics = {
                     "coverage": coverage,
                     "total_distance": total_distance,
-                    "replanning_count": replanning_count,
+                    "target_selection_count": target_selection_count,
+                    "collision_replan_count": sum(r.collision_replan_count for r in self.env.robot_list),
                     "map_merge_count": map_merge_count,
                 }
                 return True, step, metrics
