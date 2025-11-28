@@ -29,7 +29,7 @@ def run_single_experiment(
     Returns:
         dict: 實驗結果
     """
-    run_index, agent_num, map_index, graph_update_interval = args_tuple
+    run_index, agent_num, map_index, graph_update_interval, map_type = args_tuple
 
     # 每個 process 需有獨立的隨機狀態，mulitprocessing 會複製父 process
     # 但為了保險起見，在子 process 端明確地用 run_index 對其設定 deterministic seed
@@ -43,6 +43,7 @@ def run_single_experiment(
         map_index=map_index,
         save_video=False,
         graph_update_interval=graph_update_interval,
+        map_type=map_type,
     )
 
     t_start = time.perf_counter()
@@ -97,6 +98,7 @@ def run_batch(
     jobs: Optional[int] = None,
     same_maps: bool = False,
     output_dir: str = "results",
+    map_type: str = "odd",
 ) -> Tuple[List[Any], List[bool], List[int], List[int], List[float]]:
     """
     跑多次實驗並回傳每次 finished_ep 列表 (平行化版本)
@@ -116,7 +118,7 @@ def run_batch(
             # 隨機選一張圖 (或是循序，這裡維持隨機但固定種子)
             map_index = random.randint(0, map_max_index)
             for agent_num in range(agent_min, agent_max + 1):
-                tasks.append((run_idx, agent_num, map_index, graph_update_interval))
+                tasks.append((run_idx, agent_num, map_index, graph_update_interval, map_type))
                 run_idx += 1
         # 更新總 runs 數以便顯示進度
         n_runs = len(tasks)
@@ -125,7 +127,7 @@ def run_batch(
         for i in range(n_runs):
             agent_num = random.randint(agent_min, agent_max)
             map_index = random.randint(0, map_max_index)
-            tasks.append((i, agent_num, map_index, graph_update_interval))
+            tasks.append((i, agent_num, map_index, graph_update_interval, map_type))
 
     finished_eps: List[Any] = []
     successes: List[bool] = []
@@ -512,6 +514,13 @@ if __name__ == "__main__":
         action="store_true",
         help="If set, n-runs becomes number of maps, and each map is tested with all agent counts (min to max).",
     )
+    parser.add_argument(
+        "--map-type",
+        type=str,
+        default="odd",
+        choices=["odd", "even"],
+        help="Map type to use: 'odd' (hard) or 'even' (easy). Default: odd",
+    )
     args = parser.parse_args()
 
     N_RUNS = args.n_runs
@@ -533,6 +542,7 @@ if __name__ == "__main__":
         jobs=args.jobs,
         same_maps=args.same_maps,
         output_dir=args.output_dir,
+        map_type=args.map_type,
     )
 
     # save_results_csv is redundant now as run_batch calls save_and_viz_results

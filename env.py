@@ -33,6 +33,7 @@ class Env:
         force_sync_debug: bool = False,
         graph_update_interval: Optional[int] = None,
         debug_mode: bool = False,
+        map_type: str = "odd",
     ) -> None:
         """初始化環境 (讀取地圖、建立伺服器與機器人)。
 
@@ -44,6 +45,7 @@ class Env:
             force_sync_debug (bool): 是否強制同步除錯。
             graph_update_interval (Optional[int]): Graph 更新間隔。
             debug_mode (bool): 是否啟用除錯模式。
+            map_type (str): 地圖類型 ("odd" or "even")。
 
         Returns:
             None
@@ -51,7 +53,11 @@ class Env:
         self.resolution = 4
         # self.map_path = "DungeonMaps/train/easy/"
         # self.map_path = "maps/easy_even"
-        self.map_path = "maps/easy_odd"
+        if map_type == "even":
+            self.map_path = "maps/easy_even"
+        else:
+            self.map_path = "maps/easy_odd"
+            
         self.map_list = os.listdir(self.map_path)
         self.map_list.sort()
         self.map_list = [

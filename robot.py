@@ -244,6 +244,9 @@ class Robot:
                     continue
 
                 # --- 2. 修改點：機會主義任務交接 (Task Handoff Logic) ---
+                if not ENABLE_HANDOFF:
+                    continue
+
                 i_am_returning = self.is_returning
                 other_has_server_task = (
                     other_robot.target_gived_by_server and not other_robot.is_returning

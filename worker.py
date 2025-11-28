@@ -29,6 +29,7 @@ class Worker:
         save_video: bool = True,
         force_sync_debug: bool = False,
         graph_update_interval: Optional[int] = None,
+        map_type: str = "odd",
     ) -> None:
         """建立 Worker 實例，初始化環境與機器人位置。
 
@@ -40,6 +41,7 @@ class Worker:
             save_video (bool): 是否儲存模擬影片。
             force_sync_debug (bool): 是否強制同步除錯。
             graph_update_interval (Optional[int]): 圖更新間隔。
+            map_type (str): 地圖類型 ("odd" or "even")。
 
         Returns:
             None
@@ -54,6 +56,7 @@ class Worker:
             plot=plot,
             force_sync_debug=force_sync_debug,
             graph_update_interval=graph_update_interval,
+            map_type=map_type,
             debug_mode=logger.getEffectiveLevel() == logging.DEBUG,
         )
         self.step_count = 0
