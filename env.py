@@ -55,8 +55,12 @@ class Env:
         # self.map_path = "maps/easy_even"
         if map_type == "even":
             self.map_path = "maps/easy_even"
-        else:
+        elif map_type == "odd":
             self.map_path = "maps/easy_odd"
+        elif map_type == "ir2":
+            self.map_path = "maps/ir2_maps/test/complex"
+        else:
+            self.map_path = "maps/easy_odd"  # Default fallback
             
         self.map_list = os.listdir(self.map_path)
         self.map_list.sort()

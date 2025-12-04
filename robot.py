@@ -329,6 +329,26 @@ class Robot:
                     self.handoff_cooldown = HANDOFF_COOLDOWN
                     other_robot.handoff_cooldown = HANDOFF_COOLDOWN
 
+                # Case 4: 兩者都在返航 (Two Returners Merge)
+                elif i_am_returning and other_is_returning:
+                    # 比較誰離 Server 比較近
+                    if dist_self_server > dist_other_server:
+                        # 我 (Self) 離 Server 比較遠 -> 我停止返航，繼續探索
+                        # 對方 (Other) 離 Server 比較近 -> 對方繼續返航 (負責把兩人的資料帶回去)
+                        logger.info(
+                            f"[R{self.robot_id} Handoff] Both returning. R{other_robot.robot_id} is closer to server. I will stop returning and resume exploration."
+                        )
+                        self.is_returning = False
+                        self.target_gived_by_server = False
+                        self.planned_path = []  # 清空路徑以觸發重新選點
+                        self.target_pos = None  # 清空目標
+                        self.return_replan_attempts = 0
+                        self.return_fail_cooldown = 0
+                        
+                        # 設定冷卻
+                        self.handoff_cooldown = HANDOFF_COOLDOWN
+                        other_robot.handoff_cooldown = HANDOFF_COOLDOWN
+
                 # Case 3: 其他情況 (例如兩個自主探索者相遇)
                 elif (
                     not self.is_in_server_range
