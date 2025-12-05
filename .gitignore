@@ -34,6 +34,10 @@ results_comparison*/
 benchmark_report*.txt
 *_stats.csv
 
+# Visualization
+visualize_pruning.py
+*.png
+
 # IR2 Benchmark Submodule/Directory
 ir2_benchmark/
 

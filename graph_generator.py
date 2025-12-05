@@ -122,10 +122,16 @@ class Graph_generator:
         current_frontiers = (
             frontiers if frontiers is not None else np.array([]).reshape(0, 2)
         )
+        all_robot_positions = [robot_location]
         self._update_nodes_and_utilities(
-            current_frontiers, robot_map, old_frontiers=None, all_robot_positions=None
+            current_frontiers, robot_map, old_frontiers=None, all_robot_positions=all_robot_positions
         )
         self._update_guidepost()
+
+        # Graph Pruning (Initial)
+        if ENABLE_GRAPH_PRUNING:
+            self.prune_graph_to_skeleton(all_robot_positions)
+
         return self.node_coords, self.graph.edges, self.node_utility, self.guidepost
 
     def update_node_utilities(
@@ -340,6 +346,7 @@ class Graph_generator:
         self._update_guidepost()
 
         # 9. Graph Pruning (New Feature)
+        print(f"[DEBUG] ENABLE_GRAPH_PRUNING: {ENABLE_GRAPH_PRUNING}")
         if ENABLE_GRAPH_PRUNING:
             self.prune_graph_to_skeleton(all_robot_positions)
 

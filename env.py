@@ -395,9 +395,9 @@ class Env:
                             continue
                             
                         # Calculate centroid
-                        # center_of_mass returns (y, x) float coordinates
-                        cy, cx = center_of_mass(component_mask)
-                        centroids.append([cx, cy])
+                    # center_of_mass returns (y, x) float coordinates
+                    cy, cx = center_of_mass(component_mask)
+                    centroids.append([cx, cy])
                     
                     if not centroids:
                         return np.array([]).reshape(0, 2)
@@ -1009,8 +1009,19 @@ class Env:
             # 先將 bytes 重建為 numpy frames 並取得尺寸
             first_img = Image.open(io.BytesIO(self.frames_data[0])).convert("RGB")
             height, width = np.array(first_img).shape[:2]
-            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-            video_writer = cv2.VideoWriter(filename, fourcc, fps, (width, height))
+            # Try avc1 (H.264) first for better compatibility, then mp4v
+            try:
+                fourcc = cv2.VideoWriter_fourcc(*"avc1")
+                video_writer = cv2.VideoWriter(filename, fourcc, fps, (width, height))
+                if not video_writer.isOpened():
+                    logger.warning("Failed to open VideoWriter with avc1, falling back to mp4v")
+                    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+                    video_writer = cv2.VideoWriter(filename, fourcc, fps, (width, height))
+            except Exception:
+                 logger.warning("Exception with avc1, falling back to mp4v")
+                 fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+                 video_writer = cv2.VideoWriter(filename, fourcc, fps, (width, height))
+
             if not video_writer.isOpened():
                 logger.error(f"save_video: Failed to open VideoWriter for {filename}")
                 return
