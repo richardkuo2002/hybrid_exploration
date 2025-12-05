@@ -29,7 +29,7 @@ class Worker:
         save_video: bool = True,
         force_sync_debug: bool = False,
         graph_update_interval: Optional[int] = None,
-        map_type: str = "odd",
+        map_type: str = "even",
     ) -> None:
         """建立 Worker 實例，初始化環境與機器人位置。
 
