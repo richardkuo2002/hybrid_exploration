@@ -71,3 +71,8 @@ MAX_RETURN_REPLAN_ATTEMPTS = 2
 # --- Graph Pruning Parameters ---
 ENABLE_GRAPH_PRUNING = True
 PRUNING_KEEPALIVE_RADIUS = 120  # Always keep nodes within this radius of robots
+
+# --- Coordination Parameters ---
+ENABLE_SEQUENTIAL_ASSIGNMENT = True
+SEQUENTIAL_REPULSION_RADIUS = 200  # Radius to penalize nearby targets after assignment
+SEQUENTIAL_REPULSION_STRENGTH = 0.8 # Factor to reduce utility (e.g., utility *= (1 - 0.8))
