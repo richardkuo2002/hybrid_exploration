@@ -338,7 +338,108 @@ class Graph_generator:
 
         # 8. 更新 guidepost
         self._update_guidepost()
+
+        # 9. Graph Pruning (New Feature)
+        if ENABLE_GRAPH_PRUNING:
+            self.prune_graph_to_skeleton(all_robot_positions)
+
         return self.node_coords, self.graph.edges, self.node_utility, self.guidepost
+
+    def prune_graph_to_skeleton(
+        self, all_robot_positions: Optional[List[Optional[np.ndarray]]] = None
+    ) -> None:
+        """Active Pruning: Keep only nodes that are part of paths to frontiers or near robots.
+        
+        mimics IR2's efficiency strategy by removing "dead branches".
+        """
+        if self.node_coords is None or len(self.node_coords) == 0:
+            return
+
+        # 1. Identify Target Nodes (Utility > 0)
+        target_indices = np.where(self.node_utility > 0)[0]
+        if len(target_indices) == 0:
+            logger.debug("No targets for pruning. Skipping.")
+            return
+        
+        # 2. Identify Source Nodes (Robot Allocations)
+        robot_indices = []
+        if all_robot_positions:
+            for i, pos in enumerate(all_robot_positions):
+                if pos is not None:
+                    idx = self.find_closest_index_from_coords(self.node_coords, pos)
+                    if idx is not None:
+                        robot_indices.append(idx)
+        
+        if not robot_indices:
+             logger.debug("No robots for pruning sources. Skipping.")
+             return
+
+        # 3. Batch Pathfinding (Union of Shortest Paths)
+        # We want to keep any node that is part of a path from ANY robot to ANY target.
+        # Ideally, we should use Dijkstra from each frontier backwards, or just A* for assigned tasks.
+        # For simplicity and robustness, we'll keep paths from NEAREST robot to each target.
+        
+        nodes_to_keep = set()
+        
+        # Add robot safety zones (KeepAlive)
+        robot_positions_arr = np.array([p for p in all_robot_positions if p is not None])
+        if len(robot_positions_arr) > 0:
+            for i, coord in enumerate(self.node_coords):
+                dists = np.linalg.norm(coord - robot_positions_arr, axis=1)
+                if np.any(dists < PRUNING_KEEPALIVE_RADIUS):
+                     nodes_to_keep.add(tuple(coord))
+
+        # Add paths
+        # To avoid N_robots * N_targets A* calls, we can:
+        # Strategy A: Only plan for assigned targets (if we had assignment info here).
+        # Strategy B: Plan for ALL targets from their closest robot.
+        
+        for t_idx in target_indices:
+            target_coord = self.node_coords[t_idx]
+            
+            # Find closest robot to this target (Euclidean heuristic is fine for selection)
+            # This mimics "this target belongs to this region"
+            dists_to_robots = np.linalg.norm(target_coord - robot_positions_arr, axis=1)
+            closest_robot_idx = np.argmin(dists_to_robots)
+            source_pos = robot_positions_arr[closest_robot_idx]
+            
+            # Run A*
+            dist, route = self.find_shortest_path(source_pos, target_coord, self.node_coords, self.graph)
+            if route:
+                for p in route:
+                    nodes_to_keep.add(tuple(p))
+
+        # 4. Filter Nodes and Rebuild
+        logger.debug(f"Pruning: Keeping {len(nodes_to_keep)} / {len(self.node_coords)} nodes.")
+        
+        old_nodes_list = self.node_coords.tolist()
+        new_nodes_list = [p for p in old_nodes_list if tuple(p) in nodes_to_keep]
+        
+        if len(new_nodes_list) == len(old_nodes_list):
+            return # No change
+
+        self.node_coords = np.array(new_nodes_list) if new_nodes_list else np.array([]).reshape(0, 2)
+        
+        # Re-sync lists (utility, Nodes object)
+        # It's expensive to filter everything, but necessary.
+        keep_set = set(map(tuple, self.node_coords))
+        
+        self.nodes_list = [n for n in self.nodes_list if tuple(n.coords) in keep_set]
+        
+        # Re-calc utility array (faster than full update loop)
+        self.node_utility = np.array([n.utility for n in self.nodes_list])
+        
+        # Rebuild Graph Edges (Subset)
+        # We can just clear edges for removed nodes, or rebuild the whole graph object to be clean.
+        # Clearing edges is safer? 
+        # Actually, self.graph stores edges in a dict. We should remove keys for removed nodes.
+        
+        nodes_to_remove = set(map(tuple, old_nodes_list)) - keep_set
+        for p in nodes_to_remove:
+            self.graph.clear_node(p, remove_bidirectional_edges=True)
+            
+        # Update Guidepost
+        self._update_guidepost()
 
     def _update_nodes_and_utilities(
         self,
