@@ -22,8 +22,21 @@ results/
 .DS_Store
 
 .vscode/
+.agent/
 *.dat
 
 # Private documentation
 docs/dev_notes/
 dev_notes.zip
+
+# Comparison Results & Reports
+results_comparison*/
+benchmark_report*.txt
+*_stats.csv
+
+# IR2 Benchmark Submodule/Directory
+ir2_benchmark/
+
+# Benchmark Scripts (Keep main code only)
+benchmark_hybrid_vs_ir2*.py
+benchmark_graph_vs_grid.py

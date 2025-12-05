@@ -518,7 +518,7 @@ if __name__ == "__main__":
         "--map-type",
         type=str,
         default="odd",
-        choices=["odd", "even"],
+        choices=["odd", "even", "ir2"],
         help="Map type to use: 'odd' (hard) or 'even' (easy). Default: odd",
     )
     args = parser.parse_args()
