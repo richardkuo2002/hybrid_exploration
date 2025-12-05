@@ -76,3 +76,7 @@ PRUNING_KEEPALIVE_RADIUS = 120  # Always keep nodes within this radius of robots
 ENABLE_SEQUENTIAL_ASSIGNMENT = True
 SEQUENTIAL_REPULSION_RADIUS = 200  # Radius to penalize nearby targets after assignment
 SEQUENTIAL_REPULSION_STRENGTH = 0.8 # Factor to reduce utility (e.g., utility *= (1 - 0.8))
+
+# --- Frontier Clustering Parameters ---
+ENABLE_FRONTIER_CLUSTERING = True
+MIN_FRONTIER_SIZE = 5  # Ignore tiny frontier fragments

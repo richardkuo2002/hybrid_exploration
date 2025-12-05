@@ -363,11 +363,57 @@ class Env:
                 + mapping[:-2, :-2]
             )
             from parameter import PIXEL_FREE
+            from parameter import ENABLE_FRONTIER_CLUSTERING, MIN_FRONTIER_SIZE
 
             belief = downsampled_map
             is_free = belief == PIXEL_FREE
             is_frontier_neighbor = (fro_map > 0) & (fro_map < 8)
             frontier_mask = is_free & is_frontier_neighbor
+            
+            # --- Frontier Clustering Logic ---
+            if ENABLE_FRONTIER_CLUSTERING:
+                try:
+                    from scipy.ndimage import label, center_of_mass
+                    
+                    # 1. Label connected components
+                    # structure=np.ones((3,3)) allows diagonal connectivity
+                    labeled_array, num_features = label(frontier_mask, structure=np.ones((3,3)))
+                    
+                    if num_features == 0:
+                        return np.array([]).reshape(0, 2)
+                    
+                    centroids = []
+                    # 2. Iterate through features
+                    # Note: label indices start from 1
+                    for i in range(1, num_features + 1):
+                        # Get mask for this component
+                        component_mask = (labeled_array == i)
+                        component_size = np.sum(component_mask)
+                        
+                        # Filter small noise
+                        if component_size < MIN_FRONTIER_SIZE:
+                            continue
+                            
+                        # Calculate centroid
+                        # center_of_mass returns (y, x) float coordinates
+                        cy, cx = center_of_mass(component_mask)
+                        centroids.append([cx, cy])
+                    
+                    if not centroids:
+                        return np.array([]).reshape(0, 2)
+                        
+                    # Convert to numpy array and scale to real coordinates
+                    # Note: centroids are in downsampled map coordinates
+                    f_pixels = np.array(centroids)
+                    f = f_pixels * self.resolution
+                    return f.astype(int)
+                    
+                except ImportError:
+                    logger.warning("scipy.ndimage not found. Falling back to raw frontiers.")
+                except Exception as e:
+                    logger.error(f"Error in frontier clustering: {e}. Falling back to raw.")
+
+            # --- Fallback / Original Logic ---
             ind_to = np.where(frontier_mask.ravel(order="F"))[0]
             if ind_to.size == 0:
                 return np.array([]).reshape(0, 2)
@@ -375,6 +421,7 @@ class Env:
             points = np.stack([cols.ravel(order="F"), rows.ravel(order="F")], axis=-1)
             f = points[ind_to] * self.resolution
             return f.astype(int)
+            
         except Exception as e:
             logger.error(f"Error find_frontier: {e}", exc_info=True)
             return np.array([]).reshape(0, 2)
