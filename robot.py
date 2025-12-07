@@ -1,3 +1,4 @@
+from path_utils import get_bresenham_line, get_distance
 import copy
 import random
 import logging
@@ -612,7 +613,8 @@ class Robot:
         decision_reason = "Local Explore"
         if should_return_criteria or local_target_too_far:
             target_pos = self.last_position_in_server_range
-            planned_return_path = self._plan_local_path(target_pos)
+            raw_return_path = self._plan_local_path(target_pos)
+            planned_return_path = interpolate_path(raw_return_path)
             if planned_return_path and not (
                 len(planned_return_path) == 1
                 and np.array_equal(planned_return_path[0], self.position)
@@ -1072,6 +1074,7 @@ class Robot:
         )
         if route is None or dist >= 1e5:
             return [current]
+
         if len(route) > 1 and np.array_equal(route[0], current):
             route.pop(0)
         if not route or (len(route) == 1 and np.array_equal(route[0], current)):

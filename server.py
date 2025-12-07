@@ -4,6 +4,7 @@ import logging
 import sys
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
+import random
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 from skimage.measure import block_reduce
@@ -411,9 +412,10 @@ class Server:
                 )
                 
                 try:
-                    robot.planned_path = self._plan_global_path(
+                    raw_path = self._plan_global_path(
                         robot.position, robot.target_pos
                     )
+                    robot.planned_path = raw_path
                     robot.target_gived_by_server = True
                     path_len = len(robot.planned_path) if robot.planned_path else 0
                     
