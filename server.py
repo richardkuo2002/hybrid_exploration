@@ -52,7 +52,11 @@ class Server:
         self.all_robot_position: List[Optional[np.ndarray]] = []
         self.robot_in_range: List[bool] = []
         self.graph_generator: Graph_generator = Graph_generator(
-            map_size=real_map_size, sensor_range=SENSOR_RANGE, k_size=k_size, plot=plot
+            map_size=real_map_size,
+            sensor_range=SENSOR_RANGE,
+            k_size=k_size,
+            plot=plot,
+            debug_mode=self.debug_mode,
         )
         self.graph_generator.route_node.append(start_position)
         self.frontiers: List[np.ndarray] = []

@@ -21,6 +21,7 @@ class Graph_generator:
         k_size: int,
         sensor_range: int,
         plot: bool = False,
+        debug_mode: bool = False,
     ) -> None:
         """初始化 Graph_generator。
 
@@ -29,6 +30,7 @@ class Graph_generator:
             k_size (int): K 個鄰居數。
             sensor_range (int): 感測半徑。
             plot (bool): 是否啟用繪圖。
+            debug_mode (bool): 是否啟用除錯模式。
 
         Returns:
             None
@@ -42,6 +44,7 @@ class Graph_generator:
         self.candidates_utility = np.array([])
         self.guidepost: Optional[np.ndarray] = None
         self.plot = plot
+        self.debug_mode = debug_mode
         self.x: List[List[int]] = []
         self.y: List[List[int]] = []
         self.map_x = map_size[1]

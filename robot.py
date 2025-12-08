@@ -61,6 +61,7 @@ class Robot:
             sensor_range=self.sensor_range,
             k_size=k_size,
             plot=plot,
+            debug_mode=self.debug_mode,
         )
         if start_position is not None:
             self.graph_generator.route_node.append(start_position)
