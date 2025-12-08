@@ -349,7 +349,8 @@ class Graph_generator:
         self._update_guidepost()
 
         # 9. Graph Pruning (New Feature)
-        print(f"[DEBUG] ENABLE_GRAPH_PRUNING: {ENABLE_GRAPH_PRUNING}")
+        if self.debug_mode:
+            print(f"[DEBUG] ENABLE_GRAPH_PRUNING: {ENABLE_GRAPH_PRUNING}")
         if ENABLE_GRAPH_PRUNING:
             self.prune_graph_to_skeleton(all_robot_positions)
 

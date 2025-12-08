@@ -1,18 +1,18 @@
-```python
 import argparse
 import time
 import random
-import cv2datetime
+import copy
+import datetime
 import logging
 import multiprocessing
 import os
-import random
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+import cv2
 
 from env import Env
 from parameter import *
@@ -290,7 +290,7 @@ if __name__ == "__main__":
     # ... (argparse 邏輯不變) ...
     parser = argparse.ArgumentParser(description="Run a single episode...")
     parser.add_argument(
-        "--TEST_MAP_INDEX", type=int, default=1, help="Map index (default: 1, use -1 for random)"
+        "--TEST_MAP_INDEX", type=int, default=-1, help="Map index (default: -1 (random))"
     )
     parser.add_argument(
         "--TEST_AGENT_NUM", type=int, default=3, help="Number of agents (default: 3)"
