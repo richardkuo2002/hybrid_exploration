@@ -1,6 +1,8 @@
+```python
 import argparse
-import copy
-import datetime
+import time
+import random
+import cv2datetime
 import logging
 import multiprocessing
 import os
@@ -288,7 +290,7 @@ if __name__ == "__main__":
     # ... (argparse 邏輯不變) ...
     parser = argparse.ArgumentParser(description="Run a single episode...")
     parser.add_argument(
-        "--TEST_MAP_INDEX", type=int, default=1, help="Map index (default: 1)"
+        "--TEST_MAP_INDEX", type=int, default=1, help="Map index (default: 1, use -1 for random)"
     )
     parser.add_argument(
         "--TEST_AGENT_NUM", type=int, default=3, help="Number of agents (default: 3)"
@@ -318,6 +320,11 @@ if __name__ == "__main__":
         help="Graph full rebuild interval override",
     )
     args = parser.parse_args()
+
+    if args.TEST_MAP_INDEX == -1:
+        # Pick a sufficiently large random number; logic in Env will modulo it by map count
+        # This allows random selection without needing to know map count here
+        args.TEST_MAP_INDEX = random.randint(0, 10000)
 
     # Default: only show ERROR and CRITICAL to reduce log noise.
     # If --debug is provided, enable DEBUG so we can print per-step robot positions.
