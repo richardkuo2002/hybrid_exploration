@@ -807,8 +807,22 @@ class Robot:
                     next_step = self.planned_path.pop(0)
                 elif popped_step is not None:
                     next_step = popped_step
-            if next_step is not None and not np.array_equal(next_step, self.position):
-                self.position = np.array(next_step)
+            if next_step is not None:
+                # Calculate distance and direction
+                dist = np.linalg.norm(next_step - self.position)
+                
+                if dist > 1.0:
+                    # Move 1 pixel towards next_step
+                    direction = (next_step - self.position) / dist
+                    self.position = self.position + direction * 1.0
+                    # We haven't reached the node, so put it back to planned_path
+                    self.planned_path.insert(0, next_step)
+                else:
+                    # Reached the node (or close enough)
+                    self.position = np.array(next_step)
+                    # Node is already popped, so we are done with it.
+
+                # Update movement history logic
                 if not self.movement_history or not np.array_equal(
                     self.position, self.movement_history[-1]
                 ):

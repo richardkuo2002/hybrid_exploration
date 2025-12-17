@@ -10,7 +10,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 # --- Configuration ---
 NUM_EPISODES = 10
 AGENT_NUM = 3
-TIMEOUT_SECONDS = 300
+TIMEOUT_SECONDS = 3600
 HYBRID_RESULTS_FILE = "results_hybrid.csv"
 IR2_RESULTS_FILE = "results_ir2.csv"
 FINAL_COMPARISON_FILE = "comparison_hybrid_ir2.csv"
