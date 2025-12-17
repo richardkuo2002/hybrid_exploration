@@ -26,6 +26,7 @@ class Robot:
         plot: bool = False,
         graph_update_interval: Optional[int] = None,
         debug_mode: bool = False,
+        enable_handoff: bool = True,
     ) -> None:
         """初始化 Robot。
 
@@ -37,12 +38,19 @@ class Robot:
             plot (bool): 是否啟用繪圖。
             graph_update_interval (Optional[int]): Graph 更新間隔。
             debug_mode (bool): 是否啟用除錯模式。
+            enable_handoff (bool): 是否啟用交接機制。
 
         Returns:
             None
         """
         self.debug_mode = debug_mode
         self.position = start_position
+        self.enable_handoff = enable_handoff
+        if self.enable_handoff:
+            logger.info(f"Robot {getattr(self, 'robot_id', '?')} initialized with Handoff ENABLED")
+        else:
+            logger.info(f"Robot {getattr(self, 'robot_id', '?')} initialized with Handoff DISABLED")
+
         from parameter import PIXEL_UNKNOWN
 
         self.local_map = np.ones(real_map_size) * PIXEL_UNKNOWN
@@ -245,118 +253,103 @@ class Robot:
                     continue
 
                 # --- 2. 修改點：機會主義任務交接 (Task Handoff Logic) ---
-                if not ENABLE_HANDOFF:
+                if not self.enable_handoff:
                     continue
 
-                i_am_returning = self.is_returning
-                other_has_server_task = (
-                    other_robot.target_gived_by_server and not other_robot.is_returning
-                )
-                i_have_server_task = (
-                    self.target_gived_by_server and not self.is_returning
-                )
-                other_is_returning = other_robot.is_returning
+                # Case 2: Handoff (Bucket Brigade)
+                # Principle: The robot CLOSER to the server should be the one RETURNING (Relay).
+                # The robot FARTHER from the server should be the one EXPLORING.
+                
+                # Check 1: Cooldowns
+                if (
+                    self.handoff_cooldown > 0
+                    or getattr(other_robot, "handoff_cooldown", 0) > 0
+                ):
+                    continue
 
-                # 當自己正在回去時，無論對方是否有 server 任務，都改成讓對方回去，自己接手對方原本要做的事
-                # 修正：改用距離判斷，距離 Server 較近的負責回去 (Bucket Brigade)
+                # Check 2: Distance to Server
                 dist_self_server = np.linalg.norm(self.position - server.position)
                 dist_other_server = np.linalg.norm(other_robot.position - server.position)
                 
-                # Ensure other robot has a valid target to swap
-                if i_am_returning and not other_is_returning and dist_other_server < dist_self_server and other_robot.target_pos is not None:
-                    logger.info(
-                        f"[R{self.robot_id} Handoff] I am returning; swap roles with R{other_robot.robot_id} (Closer to server). R{other_robot.robot_id} will return; I will take its task."
-                    )
-                    # self 接手 other 的原始任務（深拷貝以避免共享參考）
-                    try:
-                        # 只複製目標位置，讓接手方自己重規劃路徑以避免使用過時的 planned_path
-                        self.target_pos = copy.deepcopy(other_robot.target_pos)
-                        self.planned_path = []
-                        # preserve whether the task was server-given for the receiver
-                        self.target_gived_by_server = bool(
-                            getattr(other_robot, "target_gived_by_server", False)
-                        )
-                    except Exception:
-                        logger.exception(
-                            f"[R{self.robot_id} Handoff] Failed to copy task from R{other_robot.robot_id}"
-                        )
-                    # self 停止返回（因為要去執行對方的任務）
-                    self.is_returning = False
-                    self.return_replan_attempts = 0
-                    self.return_fail_cooldown = 0
+                # We need a significant difference to justify a swap (hysteresis) to avoid jitter at boundary
+                HYSTERESIS = 10.0
+                
+                # Identify roles based on current state
+                # Returns true if robot is carrying data back (is_returning OR has server task)
+                # Note: "Server Task" usually means exploring a specific far target, 
+                # but in this context, we prioritize the "Return" action or "Relay" role.
+                
+                # Let's simplify:
+                # If ONE is returning and the OTHER is NOT returning:
+                #   The one CLOSER to server should take the RETURN task.
+                #   The one FARTHER should take the EXPLORE/IDLE state.
+                
+                i_am_returning = self.is_returning
+                other_is_returning = other_robot.is_returning
+                
+                if i_am_returning != other_is_returning:
+                    # One is returning, one is not.
+                    if i_am_returning:
+                        # I am returning. If Other is CLOSER, I should give my return task to Other.
+                        # I (Farther) -> Go Explore. Other (Closer) -> Go Return.
+                        if dist_other_server < (dist_self_server - HYSTERESIS):
+                             logger.info(f"[R{self.robot_id} -> R{other_robot.robot_id}] Handoff: I am returning but you are closer. You take return.")
+                             
+                             # Other takes my return target (Server/Base)
+                             other_robot.target_pos = copy.deepcopy(self.target_pos)
+                             other_robot.planned_path = [] # Trigger replan
+                             other_robot.is_returning = True
+                             other_robot.target_gived_by_server = False
+                             other_robot.handoff_cooldown = HANDOFF_COOLDOWN
+                             
+                             # I take Other's state (Explore/Idle)
+                             # Ideally, I should take Other's target if they had one.
+                             if other_robot.target_pos is not None:
+                                 self.target_pos = copy.deepcopy(other_robot.target_pos)
+                                 self.target_gived_by_server = getattr(other_robot, "target_gived_by_server", False)
+                             else:
+                                 self.target_pos = None
+                                 self.target_gived_by_server = False
+                                 
+                             self.planned_path = []
+                             self.is_returning = False
+                             self.handoff_cooldown = HANDOFF_COOLDOWN
+                             
+                    else: # other_is_returning
+                        # Other is returning. If I am CLOSER, I should take the return task.
+                        # Other (Farther) -> Go Explore. I (Closer) -> Go Return.
+                        if dist_self_server < (dist_other_server - HYSTERESIS):
+                             logger.info(f"[R{other_robot.robot_id} -> R{self.robot_id}] Handoff: You are returning but I am closer. I take return.")
+                             
+                             # I take Other's return target
+                             self.target_pos = copy.deepcopy(other_robot.target_pos)
+                             self.planned_path = []
+                             self.is_returning = True
+                             self.target_gived_by_server = False
+                             self.handoff_cooldown = HANDOFF_COOLDOWN
+                             
+                             # Other takes my state
+                             if self.target_pos is not None:
+                                 other_robot.target_pos = copy.deepcopy(self.target_pos)
+                                 other_robot.target_gived_by_server = self.target_gived_by_server
+                             else:
+                                 other_robot.target_pos = None
+                                 other_robot.target_gived_by_server = False
+                                 
+                             other_robot.planned_path = []
+                             other_robot.is_returning = False
+                             other_robot.handoff_cooldown = HANDOFF_COOLDOWN
 
-                    # other 改為回到其 last_position_in_server_range
-                    try:
-                        other_robot.target_pos = copy.deepcopy(
-                            other_robot.last_position_in_server_range
-                        )
-                    except Exception:
-                        other_robot.target_pos = copy.deepcopy(
-                            getattr(other_robot, "last_position_in_server_range", None)
-                        )
-                    other_robot.planned_path = []
-                    other_robot.is_returning = True
-                    other_robot.target_gived_by_server = False
-                    other_robot.return_replan_attempts = 0
-
-                    # 設定冷卻，避免立即反向交接
-                    self.handoff_cooldown = HANDOFF_COOLDOWN
-                    other_robot.handoff_cooldown = HANDOFF_COOLDOWN
-
-                elif i_have_server_task and other_is_returning and dist_self_server < dist_other_server:
-                    logger.info(
-                        f"[R{self.robot_id} Handoff] I am departing, giving task to R{other_robot.robot_id}. I am now returning (Closer to server)."
-                    )
-                    # 深拷貝原始任務，避免後續修改造成共享
-                    my_original_target = copy.deepcopy(self.target_pos)
-                    # 只複製目標位置即可，讓接手方自行 replan
-                    # 我 (B) 接收 A 的返回任務
-                    self.target_pos = copy.deepcopy(
-                        other_robot.last_position_in_server_range
-                    )
-                    self.planned_path = []
-                    self.is_returning = True
-                    self.target_gived_by_server = False
-                    self.return_replan_attempts = 0
-                    # A 接收我 (B) 的原始任務（拷貝）
-                    other_robot.target_pos = my_original_target
-                    other_robot.planned_path = []
-                    other_robot.target_gived_by_server = True
-                    other_robot.is_returning = False
-                    other_robot.return_replan_attempts = 0
-                    other_robot.return_fail_cooldown = 0
-
-                    # 設定冷卻，避免立即反向交接
-                    self.handoff_cooldown = HANDOFF_COOLDOWN
-                    other_robot.handoff_cooldown = HANDOFF_COOLDOWN
-
-                # Case 4: 兩者都在返航 (Two Returners Merge)
+                # Case 3: Both Returning (Optimization)
+                # If both are returning, the one closer should continue, the one farther should probably stop and explore.
                 elif i_am_returning and other_is_returning:
-                    # 比較誰離 Server 比較近
-                    if dist_self_server > dist_other_server:
-                        # 我 (Self) 離 Server 比較遠 -> 我停止返航，繼續探索
-                        # 對方 (Other) 離 Server 比較近 -> 對方繼續返航 (負責把兩人的資料帶回去)
-                        logger.info(
-                            f"[R{self.robot_id} Handoff] Both returning. R{other_robot.robot_id} is closer to server. I will stop returning and resume exploration."
-                        )
+                    if dist_self_server > (dist_other_server + HYSTERESIS):
+                        # I am farther. I should stop returning.
+                        logger.info(f"[R{self.robot_id}] Both returning. I am farther. Cancel my return.")
                         self.is_returning = False
-                        self.target_gived_by_server = False
-                        self.planned_path = []  # 清空路徑以觸發重新選點
-                        self.target_pos = None  # 清空目標
-                        self.return_replan_attempts = 0
-                        self.return_fail_cooldown = 0
-                        
-                        # 設定冷卻
+                        self.target_pos = None
+                        self.planned_path = []
                         self.handoff_cooldown = HANDOFF_COOLDOWN
-                        other_robot.handoff_cooldown = HANDOFF_COOLDOWN
-
-                # Case 3: 其他情況 (例如兩個自主探索者相遇)
-                elif (
-                    not self.is_in_server_range
-                    and not self.is_returning
-                    and not self.target_gived_by_server
-                ):
-                    self.planned_path = []
 
                 # --- 任務交接結束 ---
 
@@ -537,12 +530,29 @@ class Robot:
         # If in server range, give the server a chance to assign a global target via Hungarian algorithm.
         # We wait 1 step. If server fails to assign (e.g. no candidates), we fall back to local next step.
         if self.is_in_server_range and not self.target_gived_by_server:
+            # OPTIMIZATION: Check if we already have candidates from server.
+            # If server has candidates and we have copied them, or if we have our own, maybe we don't need to wait?
+            # But the original logic was to wait for 'update_and_assign_tasks' which runs on Server step.
+            # Since Robot connects to Server state, the 'assign' happens inside server.update_and_assign_tasks sets robot.target_pos.
+            # So waiting 1 step is reasonable to catch the server's assignment cycle.
+            # HOWEVER, we should check if we already have a target assigned by server in this very step (before decide called).
+            # The centralized logic runs in Env loop: 
+            #   1. Robots sense (parallel)
+            #   2. Robots interact (sequential logic here)
+            #   3. Server updates (centralized) -> This is later in the loop!
+            # So: Robot decides -> Robot moves -> Server assigns.
+            # This means if I am in range, I decide now. Server assigns LATER in this step.
+            # So I must wait for NEXT step to see result.
+            # Default wait is good, but maybe we can check if we just entered range? Use hysteresis.
+            
             if not self.waited_for_server:
-                logger.debug(f"[R{self.robot_id} Decide] In server range. Waiting 1 step for server assignment.")
+                # First time asking (or re-asking)
                 self.waited_for_server = True
-                return
+                return # Wait this turn. Server will assign at end of this turn.
             else:
-                logger.debug(f"[R{self.robot_id} Decide] Server assigned nothing last step. Falling back to local.")
+                # We waited 1 turn. If we are here, it means Server ran but didn't give us a target 
+                # (or gave one and we finished it? No, if gave, target_gived_by_server would be True).
+                # So server has nothing for us (e.g. no candidates). Fallback to local.
                 self.waited_for_server = False
         else:
             # Reset wait flag if we are out of range or have a server target (though if we have a target, we shouldn't be here)
@@ -803,13 +813,6 @@ class Robot:
                     self.position, self.movement_history[-1]
                 ):
                     self.movement_history.append(self.position.copy())
-        dist_to_server = np.linalg.norm(
-            self.position - self.last_position_in_server_range
-        )
-        if dist_to_server < SERVER_COMM_RANGE:
-            self.is_in_server_range = True
-        else:
-            self.is_in_server_range = False
 
     def _select_node(self, all_robots: List["Robot"]) -> Tuple[np.ndarray, int, float]:
         """選擇最佳 local 候選節點。

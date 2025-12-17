@@ -26,6 +26,7 @@ class Server:
         force_sync_debug: bool = False,
         graph_update_interval: Optional[int] = None,
         debug_mode: bool = False,
+        enable_sequential_assignment: bool = True,  # New Argument
     ) -> None:
         """初始化 Server，管理全域地圖與任務分派狀態。
 
@@ -79,6 +80,7 @@ class Server:
         self.force_sync_debug = force_sync_debug
         self.last_rebuild_time: Optional[float] = None
         self.last_rebuild_step: Optional[int] = None
+        self.enable_sequential_assignment = enable_sequential_assignment
 
     def update_and_assign_tasks(
         self, robot_list: List[Any], real_map: np.ndarray, find_frontier_func: Any
@@ -220,6 +222,14 @@ class Server:
                             robot.local_map_graph = copy.deepcopy(self.local_map_graph)
                             robot.node_utility = copy.deepcopy(self.node_utility)
                             robot.guidepost = copy.deepcopy(self.guidepost)
+                            # 同步地圖資訊 (Full Map Sync)
+                            # 確保機器人擁有與節點對應的地圖像素，避免節點出現在未知區域
+                            try:
+                                if self.global_map.shape == robot.local_map.shape:
+                                    robot.local_map[:] = self.global_map[:]
+                            except Exception as e:
+                                logger.error(f"[Server Sync] Map sync failed for R{i}: {e}")
+                            
                             # 同步 graph_generator 內部結構，確保 robots 的輕量更新可以作用於完整 nodes_list
                             try:
                                 robot.graph_generator.node_coords = copy.deepcopy(
@@ -263,9 +273,21 @@ class Server:
                 ):
                     if i < len(robot_list):
                         robot = robot_list[i]
-                        if robot.needs_new_target():
+                        
+                        # OPTIMIZATION: Task Locking
+                        # If robot has a local target (not given by server) AND is gaining good info,
+                        # do not re-assign it. Let it finish its local work.
+                        has_local_high_gain = (
+                            (not robot.target_gived_by_server)
+                            and (robot.target_pos is not None)
+                            and (robot.current_info_gain > MIN_INFO_GAIN_THRESHOLD)
+                        )
+                        
+                        if robot.needs_new_target() and not has_local_high_gain:
                             robots_need_assignment.append(i)
                             robot_positions.append(self.all_robot_position[i])
+                        elif has_local_high_gain:
+                            logger.debug(f"[Server Step] R{i} has valid local target with high gain ({robot.current_info_gain:.1f}). Skipping assignment.")
         else:
             logger.error("[Server Step] self.robot_in_range missing!")
         logger.debug(
@@ -347,7 +369,7 @@ class Server:
         
         assigned_count = 0
         
-        if ENABLE_SEQUENTIAL_ASSIGNMENT:
+        if self.enable_sequential_assignment:
             # 複製一份 utilities 以便動態修改 (確保為 float 以避免 casting error)
             dynamic_utilities = available_utilities.astype(float)
             # 追蹤已分配的目標索引 (在 available_candidates 中的 index)
@@ -440,11 +462,42 @@ class Server:
                     robot.target_gived_by_server = False
 
         else:
-            # --- 舊的 Hungarian Logic (保留作為 fallback 或比較) ---
-            # ... (原本的 Hungarian 程式碼，如果 ENABLE_SEQUENTIAL_ASSIGNMENT=False) ...
-            # 為了簡潔，這裡直接替換。如果需要保留舊邏輯，應該用 if-else 包裹原本的大段代碼。
-            # 鑑於這是 "Implementation Plan" 的直接執行，我將完全替換以確保生效。
-            pass 
+            # Hungarian Assignment
+            robot_indices = robots_need_assignment
+            num_targets = len(available_candidates)
+            
+            if robot_indices and num_targets > 0:
+                cost_matrix = np.zeros((len(robot_indices), num_targets))
+                lambda_dist = 1.0 
+                
+                for r_local, r_global in enumerate(robot_indices):
+                    # robot_positions aligns with robots_need_assignment
+                    r_pos = robot_positions[r_local]
+                    
+                    dists = np.linalg.norm(available_candidates - r_pos, axis=1)
+                    costs = -available_utilities + lambda_dist * dists
+                    cost_matrix[r_local, :] = costs
+                
+                row_ind, col_ind = linear_sum_assignment(cost_matrix)
+                
+                for r, c in zip(row_ind, col_ind):
+                    robot_idx = robot_indices[r]
+                    target_pos = available_candidates[c]
+                    
+                    robot = robot_list[robot_idx]
+                    robot.target_pos = np.array(target_pos)
+                    try:
+                        robot.planned_path = self._plan_global_path(robot.position, robot.target_pos)
+                        if robot.planned_path and len(robot.planned_path) > 1:
+                            robot.target_gived_by_server = True
+                            assigned_count += 1
+                        else:
+                            robot.target_pos = None
+                            robot.target_gived_by_server = False
+                    except Exception as e:
+                        logger.error(f"[Server Hungarian] Path plan error R{robot_idx}: {e}")
+                        robot.target_pos = None
+                        robot.target_gived_by_server = False
 
         num_requested = len(robots_need_assignment)
         logger.debug(

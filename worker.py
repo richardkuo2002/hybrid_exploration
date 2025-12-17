@@ -32,6 +32,8 @@ class Worker:
         force_sync_debug: bool = False,
         graph_update_interval: Optional[int] = None,
         map_type: str = "even",
+        enable_handoff: bool = True,
+        enable_sequential_assignment: bool = True,
     ) -> None:
         """建立 Worker 實例，初始化環境與機器人位置。
 
@@ -44,6 +46,7 @@ class Worker:
             force_sync_debug (bool): 是否強制同步除錯。
             graph_update_interval (Optional[int]): 圖更新間隔。
             map_type (str): 地圖類型 ("odd" or "even")。
+            enable_handoff (bool): 是否啟用交接機制。
 
         Returns:
             None
@@ -60,25 +63,12 @@ class Worker:
             graph_update_interval=graph_update_interval,
             map_type=map_type,
             debug_mode=logger.getEffectiveLevel() == logging.DEBUG,
+            enable_handoff=enable_handoff,
+            enable_sequential_assignment=enable_sequential_assignment,
         )
         self.step_count = 0
         self.plot = plot
         self.save_video = save_video
-        for i, robot in enumerate(self.env.robot_list):
-            if (
-                not hasattr(robot, "node_coords")
-                or robot.node_coords is None
-                or len(robot.node_coords) == 0
-            ):
-                logger.warning(f"Robot {i} has no node_coords at init.")
-            else:
-                iter_idx = min(i, len(robot.node_coords) - 1)
-                robot_position = robot.node_coords[iter_idx]
-                robot.position = robot_position
-                if not hasattr(robot, "movement_history") or not robot.movement_history:
-                    robot.movement_history = [robot.position.copy()]
-                elif not np.array_equal(robot.position, robot.movement_history[-1]):
-                    robot.movement_history.append(robot.position.copy())
 
     def run_episode(self, curr_episode: int = 0) -> Tuple[bool, int]:
         """執行一個 episode 的主迴圈。
@@ -181,7 +171,9 @@ class Worker:
 
             # === Update Server State & Merge Maps ===
             # Update robot positions and range status on server
-            self.env.server.all_robot_position = [r.position for r in self.env.robot_list]
+            for i, r in enumerate(self.env.robot_list):
+                if r.is_in_server_range:
+                    self.env.server.all_robot_position[i] = r.position.copy()
             self.env.server.robot_in_range = [r.is_in_server_range for r in self.env.robot_list]
 
             # Merge local maps from robots in range into global map
@@ -298,9 +290,15 @@ if __name__ == "__main__":
     parser.add_argument("--plot", action="store_true", help="Enable real-time plotting")
     parser.add_argument(
         "--save_video",
-        action=argparse.BooleanOptionalAction,
+        action="store_true",
         default=True,
         help="Save video (default: True)",
+    )
+    parser.add_argument(
+        "--no-save_video",
+        action="store_false",
+        dest="save_video",
+        help="Do not save video",
     )
     parser.add_argument(
         "--debug",
@@ -319,6 +317,30 @@ if __name__ == "__main__":
         default=None,
         help="Graph full rebuild interval override",
     )
+    parser.add_argument(
+        "--enable-handoff",
+        action="store_true",
+        default=True,
+        help="Enable hybrid handoff mechanism (default: True)",
+    )
+    parser.add_argument(
+        "--no-enable-handoff",
+        action="store_false",
+        dest="enable_handoff",
+        help="Disable hybrid handoff mechanism",
+    )
+    parser.add_argument(
+        "--enable-sequential",
+        action="store_true",
+        default=True,
+        help="Enable sequential assignment (default: True). If False, uses Hungarian.",
+    )
+    parser.add_argument(
+        "--no-enable-sequential",
+        action="store_false",
+        dest="enable_sequential",
+        help="Disable sequential assignment",
+    )
     args = parser.parse_args()
 
     if args.TEST_MAP_INDEX == -1:
@@ -327,8 +349,8 @@ if __name__ == "__main__":
         args.TEST_MAP_INDEX = random.randint(0, 10000)
 
     # Default: only show ERROR and CRITICAL to reduce log noise.
-    # If --debug is provided, enable DEBUG so we can print per-step robot positions.
-    log_level = logging.DEBUG if args.debug else logging.ERROR
+    # If --debug is provided, enable DEBUG. Otherwise INFO (to see final stats).
+    log_level = logging.DEBUG if args.debug else logging.INFO
     logging.basicConfig(
         level=log_level,
         format="%(asctime)s %(levelname)-8s [%(name)s] %(message)s",
@@ -336,7 +358,7 @@ if __name__ == "__main__":
     )
 
     logger.info(
-        f"Starting worker with Map Index: {args.TEST_MAP_INDEX}, Agent Num: {args.TEST_AGENT_NUM}, Plot: {args.plot}, Save Video: {args.save_video}"
+        f"Starting worker with Map Index: {args.TEST_MAP_INDEX}, Agent Num: {args.TEST_AGENT_NUM}, Plot: {args.plot}, Save Video: {args.save_video}, Handoff: {args.enable_handoff}"
     )
 
     try:
@@ -348,6 +370,13 @@ if __name__ == "__main__":
             save_video=args.save_video,
             force_sync_debug=args.force_sync_debug,
             graph_update_interval=args.graph_update_interval,
+            map_type="even", # Default fallback if not specified, though args usually has it. 
+                             # Note: original code didn't parse map_type in main block, assuming 'even' or adding it now.
+                             # Let's check if map_type was in args in original code. 
+                             # It was not in the if __name__ == "__main__": block I read.
+                             # I will stick to minimal changes: add enable_handoff.
+            enable_handoff=args.enable_handoff,
+            enable_sequential_assignment=args.enable_sequential,
         )
         success, steps, metrics = worker.run_episode(curr_episode=0)
         logger.info(f"Episode finished: {success} in {steps} steps. Metrics: {metrics}")

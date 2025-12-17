@@ -2,7 +2,8 @@ import cv2
 import numpy as np
 import os
 
-map_path = "maps/easy_odd/img_1001.png"
+map_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "maps", "easy_odd", "img_1001.png")
+
 PIXEL_START = 208
 MAP_THRESHOLD = 150
 

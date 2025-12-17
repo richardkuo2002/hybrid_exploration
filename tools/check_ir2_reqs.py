@@ -17,7 +17,8 @@ except ImportError:
     print("Scikit-image is NOT installed.")
 
 # Check map pixels
-map_path = "maps/easy_even/img_10.png"
+map_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "maps", "easy_even", "img_10.png")
+
 if os.path.exists(map_path):
     img = cv2.imread(map_path, cv2.IMREAD_GRAYSCALE)
     unique_vals = np.unique(img)

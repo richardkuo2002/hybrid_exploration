@@ -34,6 +34,8 @@ class Env:
         graph_update_interval: Optional[int] = None,
         debug_mode: bool = False,
         map_type: str = "odd",
+        enable_handoff: bool = True,
+        enable_sequential_assignment: bool = True,
     ) -> None:
         """初始化環境 (讀取地圖、建立伺服器與機器人)。
 
@@ -46,6 +48,8 @@ class Env:
             graph_update_interval (Optional[int]): Graph 更新間隔。
             debug_mode (bool): 是否啟用除錯模式。
             map_type (str): 地圖類型 ("odd" or "even")。
+            enable_handoff (bool): 是否啟用交接機制。
+            enable_sequential_assignment (bool): 是否啟用循序分配。
 
         Returns:
             None
@@ -97,6 +101,7 @@ class Env:
             force_sync_debug=self.force_sync_debug,
             graph_update_interval=graph_update_interval,
             debug_mode=debug_mode,
+            enable_sequential_assignment=enable_sequential_assignment,
         )
         self.n_agent = n_agent
         self.robot_list: List[Robot] = []
@@ -166,6 +171,7 @@ class Env:
                 plot=plot,
                 graph_update_interval=graph_update_interval,
                 debug_mode=debug_mode,
+                enable_handoff=enable_handoff,
             )
             robot.robot_id = i
             try:

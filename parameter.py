@@ -4,7 +4,7 @@ SENSOR_RANGE = 80  # 80
 SERVER_COMM_RANGE = 160  # 160
 ROBOT_COMM_RANGE = 80  # 80
 DISTANCE_WEIGHT = 1
-OUT_RANGE_STEP = 20
+OUT_RANGE_STEP = 50
 
 MAX_EPS_STEPS = 196
 K_SIZE = 30
@@ -20,7 +20,7 @@ LOCAL_UTILITY_THRESHOLD = 10
 # ---------------------------------
 
 # 新增：交接冷卻（避免立即反向交接）
-HANDOFF_COOLDOWN = 3  # 單位：步數
+HANDOFF_COOLDOWN = 10  # 單位：步數
 
 # 新增：是否啟用交接機制 (Handoff)
 ENABLE_HANDOFF = True
@@ -74,9 +74,9 @@ PRUNING_KEEPALIVE_RADIUS = 120  # Always keep nodes within this radius of robots
 
 # --- Coordination Parameters ---
 ENABLE_SEQUENTIAL_ASSIGNMENT = True
-SEQUENTIAL_REPULSION_RADIUS = 200  # Radius to penalize nearby targets after assignment
-SEQUENTIAL_REPULSION_STRENGTH = 0.8 # Factor to reduce utility (e.g., utility *= (1 - 0.8))
+SEQUENTIAL_REPULSION_RADIUS = 100  # Radius to penalize nearby targets after assignment
+SEQUENTIAL_REPULSION_STRENGTH = 0.3 # Factor to reduce utility (e.g., utility *= (1 - 0.3))
 
 # --- Frontier Clustering Parameters ---
-ENABLE_FRONTIER_CLUSTERING = True
+ENABLE_FRONTIER_CLUSTERING = False
 MIN_FRONTIER_SIZE = 5  # Ignore tiny frontier fragments
