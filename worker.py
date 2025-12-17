@@ -102,42 +102,49 @@ class Worker:
         for step in range(MAX_EPS_STEPS):
             msg_cnt = ""
             
-            # === Phase 1: Parallel Sensor & Graph Update ===
-            # Execute sense_and_update_graph in parallel
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                futures = []
-                for i, robot in enumerate(self.env.robot_list):
-                    futures.append(
-                        executor.submit(
-                        robot.sense_and_update_graph,
-                            self.env.real_map,
-                            self.env.find_frontier,
-                            self.env.robot_list,
+            # === Phase 1: Parallel Sensor & Graph Update (Conditional) ===
+            # Only sense if NOT moving (i.e., at a node or idle)
+            robots_needing_update = [r for r in self.env.robot_list if not r.is_moving]
+            
+            if robots_needing_update:
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    futures = []
+                    for i, robot in enumerate(robots_needing_update):
+                        futures.append(
+                            executor.submit(
+                            robot.sense_and_update_graph,
+                                self.env.real_map,
+                                self.env.find_frontier,
+                                self.env.robot_list,
+                            )
                         )
-                    )
-                # Wait for all to complete and handle exceptions
-                for i, future in enumerate(futures):
-                    try:
-                        future.result()
-                    except Exception as e:
-                        logger.error(f"Error in Robot {i} parallel update step {step}: {e}", exc_info=True)
+                    # Wait for all to complete
+                    for future in futures:
+                        try:
+                            future.result()
+                        except Exception as e:
+                            logger.error(f"Error in parallel update step {step}: {e}", exc_info=True)
 
-            # === Phase 2: Sequential Interaction & Decision ===
+            # === Phase 2: Sequential Interaction & Decision & Move ===
             for i, robot in enumerate(self.env.robot_list):
                 try:
-                    # Interaction & Merge (Sequential)
-                    robot.interact_and_merge(
-                        self.env.robot_list,
-                        self.env.server,
-                        self.env.merge_maps,
-                    )
-                    map_merge_count += 1 # Count merge operations (per robot per step)
-                    
-                    # Decision & Move (Sequential)
-                    if robot.needs_new_target():
-                        if not robot.is_in_server_range:
-                            robot.decide_next_target(self.env.robot_list)
-                            target_selection_count += 1 # Count target selections
+                    # Update & Interact ONLY if not moving (at node)
+                    if not robot.is_moving:
+                        # Interaction & Merge (Sequential)
+                        robot.interact_and_merge(
+                            self.env.robot_list,
+                            self.env.server,
+                            self.env.merge_maps,
+                        )
+                        map_merge_count += 1
+                        
+                        # Decision
+                        if robot.needs_new_target():
+                            if not robot.is_in_server_range:
+                                robot.decide_next_target(self.env.robot_list)
+                                target_selection_count += 1
+                                
+                    # Always Move (Physics)
                     robot.move_one_step(self.env.robot_list)
                     
                     # Calculate distance

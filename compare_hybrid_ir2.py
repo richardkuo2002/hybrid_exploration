@@ -14,7 +14,7 @@ TIMEOUT_SECONDS = 3600
 HYBRID_RESULTS_FILE = "results_hybrid.csv"
 IR2_RESULTS_FILE = "results_ir2.csv"
 FINAL_COMPARISON_FILE = "comparison_hybrid_ir2.csv"
-MAX_WORKERS = 4 # Parallel workers for Hybrid
+MAX_WORKERS = max(1, os.cpu_count() - 4) # Parallel workers for Hybrid (keep 4 free)
 
 def parse_hybrid_output(output_str):
     metrics = {

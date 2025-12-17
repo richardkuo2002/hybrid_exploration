@@ -125,6 +125,7 @@ class Robot:
         # self.handoff_cooldown = 0 # Moved up
         # self.debug removed
         self.waited_for_server = False
+        self.is_moving = False
 
     def sense_and_update_graph(
         self,
@@ -817,10 +818,12 @@ class Robot:
                     self.position = self.position + direction * 1.0
                     # We haven't reached the node, so put it back to planned_path
                     self.planned_path.insert(0, next_step)
+                    self.is_moving = True
                 else:
                     # Reached the node (or close enough)
                     self.position = np.array(next_step)
                     # Node is already popped, so we are done with it.
+                    self.is_moving = False
 
                 # Update movement history logic
                 if not self.movement_history or not np.array_equal(
